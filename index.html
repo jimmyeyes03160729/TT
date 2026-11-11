@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>泰國新廠設備追蹤</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: sticky app bar → summary tiles + department progress → filter bar → list or Gantt; editor is a right-side drawer (full screen on phones) */
+:root{
+  --bg:#F2F4F6; --surface:#FFFFFF; --sunk:#E9EDF1; --ink:#15202B; --muted:#5A6672; --line:#D9DFE5;
+  --accent:#1C5D99; --accent-ink:#FFFFFF; --accent-soft:#E2ECF6; --po:#9DBBDD;
+  --ok:#1F7A4D; --ok-soft:#DFF1E7; --warn:#9A5A00; --warn-soft:#FAEED8; --tune:#E3A34A;
+  --bad:#B42318; --bad-soft:#FBE3E0; --scrim:rgba(15,25,35,.42); --shadow:0 12px 40px rgba(15,30,45,.18);
+  --sans:"Noto Sans TC","PingFang TC","Microsoft JhengHei","Heiti TC",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  --r:8px; --gut:max(16px, env(safe-area-inset-left, 0px)); --gutR:max(16px, env(safe-area-inset-right, 0px));
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#0E141A; --surface:#161F28; --sunk:#1C2731; --ink:#E4EAF0; --muted:#97A4B0; --line:#2A3641;
+  --accent:#6EA6DB; --accent-ink:#0B1A28; --accent-soft:#1A2C3E; --po:#35577A;
+  --ok:#5BC489; --ok-soft:#14301F; --warn:#E6A84F; --warn-soft:#33260F; --tune:#C98B34;
+  --bad:#F07A6C; --bad-soft:#3A1A17; --scrim:rgba(0,0,0,.6); --shadow:0 12px 40px rgba(0,0,0,.5); color-scheme:dark; } }
+:root[data-theme="dark"]{
+  --bg:#0E141A; --surface:#161F28; --sunk:#1C2731; --ink:#E4EAF0; --muted:#97A4B0; --line:#2A3641;
+  --accent:#6EA6DB; --accent-ink:#0B1A28; --accent-soft:#1A2C3E; --po:#35577A;
+  --ok:#5BC489; --ok-soft:#14301F; --warn:#E6A84F; --warn-soft:#33260F; --tune:#C98B34;
+  --bad:#F07A6C; --bad-soft:#3A1A17; --scrim:rgba(0,0,0,.6); --shadow:0 12px 40px rgba(0,0,0,.5); color-scheme:dark; }
+
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.55 var(--sans);-webkit-text-size-adjust:100%}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:var(--surface)}
+button,input,select,textarea{font:inherit;color:inherit}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+.wrap{max-width:1360px;margin:0 auto;padding-left:var(--gut);padding-right:var(--gutR)}
+
+/* buttons & inputs */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:36px;padding:0 14px;border-radius:var(--r);border:1px solid var(--line);background:var(--surface);cursor:pointer;font-weight:500;white-space:nowrap;text-decoration:none;color:var(--ink)}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.danger{color:var(--bad);border-color:var(--bad-soft)}
+.btn.danger.armed{background:var(--bad);color:#fff;border-color:var(--bad)}
+.btn.ghost{border-color:transparent;background:transparent}
+.btn:disabled{opacity:.55;cursor:default}
+.btn.sm{min-height:30px;padding:0 10px;font-size:13px}
+.inp{width:100%;min-height:38px;padding:7px 10px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+.inp:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px var(--accent-soft)}
+textarea.inp{min-height:76px;resize:vertical}
+select.inp{appearance:auto}
+label.lab{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;letter-spacing:.02em}
+
+/* app bar */
+.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--surface);border-bottom:1px solid var(--line)}
+.bar .wrap{display:flex;align-items:center;gap:12px;padding-block:10px}
+.brand{display:flex;flex-direction:column;min-width:0;flex:1}
+.brand b{font-size:17px;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.brand span{font-size:12px;color:var(--muted)}
+.bar-actions{display:flex;gap:8px;align-items:center}
+.demo-band{background:var(--warn-soft);color:var(--warn);font-size:13px}
+.demo-band .wrap{padding-block:8px}
+
+/* summary */
+main{display:flex;flex-direction:column;gap:16px;padding-block:16px 48px}
+.tiles{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
+.tile{display:flex;flex-direction:column;gap:2px;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);cursor:pointer;text-align:left}
+.tile:hover{border-color:var(--accent)}
+.tile.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.tile small{font-size:12px;color:var(--muted)}
+.tile strong{font:500 26px/1.15 var(--mono);font-variant-numeric:tabular-nums}
+.tile.t-done strong{color:var(--ok)} .tile.t-bad strong{color:var(--bad)} .tile.t-doing strong{color:var(--accent)} .tile.t-soon strong{color:var(--warn)}
+.overall{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center;font-size:13px;color:var(--muted)}
+.overall .meter{flex:1 1 240px}
+.meter{height:8px;border-radius:4px;background:var(--sunk);overflow:hidden}
+.meter i{display:block;height:100%;background:var(--ok);border-radius:4px}
+.links{display:flex;gap:14px;flex-wrap:wrap}
+
+.depts{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px}
+.dept{display:flex;flex-direction:column;gap:6px;padding:10px 12px;border-radius:var(--r);border:1px solid var(--line);background:var(--surface);cursor:pointer;text-align:left}
+.dept.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.dept .top{display:flex;justify-content:space-between;gap:8px;font-weight:500}
+.dept .top span{font:400 12px var(--mono);color:var(--muted)}
+
+/* filters */
+.filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.filters .search{flex:1 1 240px}
+.filters select{width:auto;min-width:120px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--surface)}
+.seg button{border:0;background:transparent;padding:0 14px;min-height:36px;cursor:pointer;font-weight:500;color:var(--muted)}
+.seg button.on{background:var(--accent);color:var(--accent-ink)}
+.count{font-size:13px;color:var(--muted);margin-left:auto}
+
+/* list */
+.list{border:1px solid var(--line);border-radius:var(--r);background:var(--surface);overflow-x:auto}
+.row{display:grid;grid-template-columns:62px 84px minmax(200px,2.4fr) minmax(120px,1.2fr) minmax(110px,1.1fr) 70px 130px 120px 44px;gap:12px;align-items:center;padding:10px 14px;border-top:1px solid var(--line);min-width:1000px;cursor:pointer}
+.row:hover{background:var(--accent-soft)}
+.row.head{cursor:default;border-top:0;background:var(--sunk);font-size:12px;color:var(--muted);letter-spacing:.03em;padding-block:8px}
+.row.head:hover{background:var(--sunk)}
+.c-name{display:flex;flex-direction:column;min-width:0}
+.c-name b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.c-name small,.c-sub{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.c-dept,.c-vendor{min-width:0;display:flex;flex-direction:column}
+.c-dept span,.c-vendor span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.c-qty{text-align:right}
+.c-files{text-align:center;color:var(--muted);font-size:13px}
+.c-id{font-size:12px;color:var(--muted)}
+.c-prog{display:flex;align-items:center;gap:8px}
+.c-prog .meter{flex:1}
+.c-prog span{font:12px var(--mono);color:var(--muted);min-width:34px;text-align:right}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:500;white-space:nowrap}
+.chip::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.chip.s-todo{background:var(--sunk);color:var(--muted)}
+.chip.s-doing{background:var(--accent-soft);color:var(--accent)}
+.chip.s-done{background:var(--ok-soft);color:var(--ok)}
+.chip.bad{background:var(--bad-soft);color:var(--bad)}
+.t-bad{color:var(--bad)} .t-ok{color:var(--ok)} .t-warn{color:var(--warn)}
+.empty{padding:40px 16px;text-align:center;color:var(--muted)}
+
+/* Gantt */
+.gantt-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--muted)}
+.legend i{display:inline-block;width:14px;height:8px;border-radius:2px;margin-right:5px;vertical-align:middle}
+.gantt{border:1px solid var(--line);border-radius:var(--r);background:var(--surface);overflow:auto;max-height:72vh;position:relative}
+.g-grid{position:relative;width:calc(var(--gname) + var(--gw))}
+.g-row{display:flex}
+.g-row.g-hrow{position:sticky;top:0;z-index:3}
+.g-cell{height:34px;border-bottom:1px solid var(--line)}
+.g-name{flex:none;width:var(--gname);position:sticky;left:0;z-index:2;background:var(--surface);border-right:1px solid var(--line);display:flex;flex-direction:column;justify-content:center;padding:0 10px;min-width:0;cursor:pointer}
+.g-name b{font-weight:500;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.g-name small{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.g-name:hover b{color:var(--accent)}
+.g-head{background:var(--sunk);height:46px}
+.g-head.g-name{z-index:4;background:var(--sunk);cursor:default;font-size:12px;color:var(--muted)}
+.g-track{flex:none;width:var(--gw);position:relative;overflow:hidden}
+.g-tick{position:absolute;top:0;bottom:0;border-left:1px solid var(--line);font-size:11px;color:var(--muted);padding-left:4px;white-space:nowrap}
+.g-tick.m{border-left-color:var(--muted);font-weight:500;color:var(--ink)}
+.g-head .g-tick{top:auto;height:20px;bottom:0}
+.g-head .g-month{position:absolute;top:4px;font-size:12px;font-weight:500;padding-left:4px;white-space:nowrap}
+.g-wk{position:absolute;top:0;bottom:0;border-left:1px dashed var(--line)}
+.g-today{position:absolute;top:0;bottom:0;width:2px;background:var(--bad);opacity:.8;z-index:1;pointer-events:none}
+.g-bar{position:absolute;height:12px;border-radius:3px;cursor:pointer;min-width:4px}
+.g-bar.po{top:6px;background:var(--po)}
+.g-bar.tune{top:16px;background:var(--tune)}
+.g-dot{position:absolute;top:6px;width:12px;height:12px;transform:translateX(-6px) rotate(45deg);border-radius:2px;cursor:pointer}
+.g-dot.eta{background:var(--accent)}
+.g-dot.arr{background:var(--ok)}
+.g-dot.late{background:var(--bad)}
+.g-note{font-size:12px;color:var(--muted)}
+
+/* drawer */
+.scrim{position:fixed;inset:0;background:var(--scrim);z-index:40}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(640px,100%);background:var(--bg);z-index:41;display:flex;flex-direction:column;box-shadow:var(--shadow);padding-top:env(safe-area-inset-top,0px);padding-right:env(safe-area-inset-right,0px)}
+.d-head{display:flex;gap:10px;align-items:flex-start;padding:14px 18px;border-bottom:1px solid var(--line);background:var(--surface)}
+.d-head .t{flex:1;min-width:0}
+.d-head h2{margin:0;font-size:18px;line-height:1.3;text-wrap:balance;overflow-wrap:anywhere}
+.d-head .sub{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px;font-size:12px;color:var(--muted)}
+.d-body{flex:1;overflow:auto;padding:16px 18px 24px;display:flex;flex-direction:column;gap:14px;-webkit-overflow-scrolling:touch}
+.sec{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px}
+.sec h3{margin:0 0 12px;font-size:13px;letter-spacing:.06em;color:var(--muted);font-weight:500;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.fgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.fgrid .wide{grid-column:span 3}
+.fgrid .half{grid-column:span 2}
+.d-foot{display:flex;gap:8px;align-items:center;padding:12px 18px calc(12px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line);background:var(--surface);flex-wrap:wrap}
+.d-foot .sp{flex:1}
+.d-foot .state{font-size:12px;color:var(--muted)}
+.d-foot .state.dirty{color:var(--warn)}
+.confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap;width:100%;padding:10px 12px;border-radius:var(--r);background:var(--warn-soft);color:var(--warn)}
+.confirm span{flex:1;min-width:160px}
+
+/* todos */
+.todos{display:flex;flex-direction:column}
+.todo{display:flex;align-items:center;gap:10px;padding:8px 2px;border-top:1px solid var(--line)}
+.todo:first-child{border-top:0}
+.todo input[type=checkbox]{width:20px;height:20px;accent-color:var(--ok);flex:none;cursor:pointer}
+.todo .tx{flex:1;min-width:0;overflow-wrap:anywhere}
+.todo.done .tx{color:var(--muted);text-decoration:line-through}
+.todo .at{font:12px var(--mono);color:var(--muted)}
+.todo .x{border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:18px;line-height:1;padding:2px 6px;border-radius:4px}
+.todo .x:hover{color:var(--bad);background:var(--bad-soft)}
+.addrow{display:flex;gap:8px;margin-top:10px}
+
+/* files */
+.drop{display:flex;flex-direction:column;align-items:center;gap:4px;padding:18px;border:1.5px dashed var(--line);border-radius:var(--r);text-align:center;cursor:pointer;color:var(--muted)}
+.drop b{color:var(--accent);font-weight:500}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.files{display:flex;flex-direction:column;margin-top:10px}
+.file{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line)}
+.file:first-child{border-top:0}
+.file .nm{flex:1;min-width:0;display:flex;flex-direction:column}
+.file .nm a,.file .nm span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file small{font:12px var(--mono);color:var(--muted)}
+.file.up .nm span::after{content:" · 上傳中…";color:var(--warn)}
+
+/* login */
+.login{min-height:100vh;display:grid;place-items:center;padding:24px var(--gutR) 24px var(--gut)}
+.card{width:min(420px,100%);background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:28px 24px;display:flex;flex-direction:column;gap:14px;box-shadow:var(--shadow)}
+.card h1{margin:0;font-size:22px}
+.card p{margin:0;color:var(--muted)}
+.note{padding:10px 12px;border-radius:var(--r);background:var(--warn-soft);color:var(--warn);font-size:13px}
+.err{color:var(--bad);font-size:13px;min-height:1em}
+.loading{min-height:60vh;display:grid;place-items:center;text-align:center;color:var(--muted)}
+.spin{width:28px;height:28px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--accent);animation:sp 0.9s linear infinite;margin:0 auto 12px}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){ .spin{animation-duration:3s} }
+
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:60;background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:var(--r);font-size:14px;box-shadow:var(--shadow);max-width:calc(100% - 32px)}
+.toast.bad{background:var(--bad);color:#fff}
+
+/* phones & tablets */
+@media (max-width: 900px){
+  .tiles{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media (max-width: 720px){
+  body{font-size:15px}
+  .inp,select.inp,textarea.inp{font-size:16px}
+  .brand b{font-size:16px}
+  .bar-actions .hide-sm{display:none}
+  .tiles{gap:8px}
+  .tile{padding:10px}
+  .tile strong{font-size:22px}
+  .depts{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .filters .search{flex-basis:100%}
+  .filters select{flex:1 1 calc(50% - 4px);min-width:0}
+  .filters .seg{flex:1 1 100%}
+  .filters .seg button{flex:1}
+  .count{margin-left:0;width:100%}
+  .list{border:0;background:transparent;overflow:visible;display:flex;flex-direction:column;gap:8px}
+  .row.head{display:none}
+  .row{min-width:0;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);gap:6px 10px;padding:12px;
+    grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;
+    grid-template-areas:"name name st" "dept vendor vendor" "eta eta qty" "prog prog files"}
+  .c-id{display:none}
+  .c-st{grid-area:st;justify-self:end}
+  .c-name{grid-area:name}
+  .c-name b{white-space:normal}
+  .c-dept{grid-area:dept}.c-vendor{grid-area:vendor}.c-eta{grid-area:eta}.c-qty{grid-area:qty}.c-prog{grid-area:prog}.c-files{grid-area:files}
+  .c-dept,.c-vendor,.c-eta{font-size:13px}
+  .c-vendor::before{content:"廠商 ";color:var(--muted);font-size:12px}
+  .c-eta::before{content:"預計交機 ";color:var(--muted);font-size:12px}
+  .c-qty::before{content:"數量 ";color:var(--muted);font-size:12px;font-family:var(--sans)}
+  .c-files::before{content:"附件 "}
+  .drawer{width:100%;padding-left:env(safe-area-inset-left,0px)}
+  .d-head,.d-body,.d-foot{padding-left:16px;padding-right:16px}
+  .fgrid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .fgrid .wide,.fgrid .half{grid-column:span 2}
+  .gantt{max-height:none}
+}
+</style>
+
+<script src="config.js"></script>
+</head>
+<body>
+<div id="app"></div>
+<input type="file" id="filepick" multiple hidden>
+
+<script>
+
+(function(){
+'use strict';
+const TODO_TEMPLATE=['詢價 / 比價','規格確認','請購簽核','下單 (PO)','付款','BOI 申請','出貨 / 出口報關','泰國清關','到廠交機','安裝 / 調機','驗收完成'];
+const DEPTS=['工程一部','工程二部','品保部','制造部','包材','廠務'];
+const SOURCES=['中國採購','台北代購','泰國採購','網購','自製','廠房工程'];
+const CURR=['CNY','USD','THB','TWD'];
+const PAY=['未付款','已付訂金','已付清'];
+const BOI=['未送審','準備送審','審查中','已核准','退回','不適用'];
+const MAXB=25*1024*1024;
+const TK='eqt_token';
+const FORM=[
+ {sec:'基本資料',f:[['name','設備名稱','text','wide',1],['nameEn','英文名稱','text','wide'],['dept','部門','combo','',0,DEPTS],['area','製程 / 站別','text'],['tagNo','機台編號','text'],['spec','規格 / 型號','text','wide'],['qty','數量','num'],['unit','單位','text'],['owner','負責人','text']]},
+ {sec:'交期與調機',f:[['poDate','下單日','date'],['eta','預計交機日','date'],['arrivalDate','實際交機日','date'],['tuneStart','調機開始日','date'],['tuneEnd','調機完成日','date'],['leadTime','交期說明','text'],]},
+ {sec:'廠商與金額',f:[['vendor','設備廠商 / 品牌','text','half'],['source','採購來源','select','',0,SOURCES],['currency','幣別','select','',0,CURR],['unitPrice','單價','num'],['totalPrice','總價','num'],['payment','付款狀態','select','',0,PAY]]},
+ {sec:'BOI / 海關',f:[['boi','BOI 狀態','select','',0,BOI],['hsCode','HS Code','text'],['origin','原產國','text']]},
+ {sec:'廠務需求',f:[['size','尺寸 (長×寬×高)','text','wide'],['utilities','水 / 電 / 氣需求','textarea','wide']]},
+ {sec:'備註',f:[['note','備註','textarea','wide']]}
+];
+
+const $=(s,r=document)=>r.querySelector(s);
+const esc=v=>String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const LS={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v);return true}catch(e){return false}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
+const pad=n=>String(n).padStart(2,'0');
+const ymd=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+const today=()=>ymd(new Date());
+const pd=s=>{const m=String(s||'').match(/^(\d{4})-(\d{2})-(\d{2})/);return m?new Date(+m[1],+m[2]-1,+m[3]):null};
+const days=(a,b)=>Math.round((b-a)/864e5);
+const until=s=>days(pd(today()),pd(s));
+const fmtD=s=>{const d=pd(s);return d?(d.getFullYear()+'/'+pad(d.getMonth()+1)+'/'+pad(d.getDate())):''};
+const money=n=>Number(n).toLocaleString('en-US',{maximumFractionDigits:0});
+const clone=o=>JSON.parse(JSON.stringify(o));
+const fsize=b=>!b?'':b<1024?b+' B':b<1048576?(b/1024).toFixed(0)+' KB':(b/1048576).toFixed(1)+' MB';
+const folderUrl=id=>id?'https://drive.google.com/drive/folders/'+id:'';
+
+/* ---------- backend bridge ---------- */
+const GAS=typeof google==='object'&&google&&google.script&&google.script.run;
+const API_URL=String(window.API_URL||'').trim();
+const DEMO=!GAS&&!API_URL&&Array.isArray(window.SEED_ITEMS);
+async function call(fn,...a){
+  if(GAS) return new Promise((res,rej)=>google.script.run.withSuccessHandler(res).withFailureHandler(rej)[fn](...a));
+  if(API_URL){
+    let r;
+    try{ r=await fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({fn,args:a}),redirect:'follow'}); }
+    catch(e){ throw new Error('連不到伺服器，請檢查網路後再試一次。'); }
+    let j; try{ j=await r.json(); }catch(e){ throw new Error('伺服器回應異常（HTTP '+r.status+'）。請確認 Apps Script 部署的存取權是「所有人」。'); }
+    if(!j.ok) throw new Error(j.error||'發生錯誤');
+    return j.data;
+  }
+  if(DEMO) return new Promise((res,rej)=>setTimeout(()=>{try{res(Demo[fn](...a))}catch(e){rej(e)}},120));
+  throw new Error('NOAPI');
+}
+const msg=e=>String(e&&e.message||e).replace(/^Error:\s*/,'').replace(/^Exception:\s*/,'');
+async function authed(fn,...a){
+  try{return await call(fn,S.token,...a)}
+  catch(e){ if(msg(e).indexOf('AUTH')>=0){S.token=null;LS.del(TK);boot();throw new Error('登入已過期，請重新登入。')} throw e; }
+}
+
+/* ---------- preview backend (browser only) ---------- */
+const Demo={
+  mem:null,cred:null,
+  hash(p){let h=7;for(const c of p)h=(h*31+c.charCodeAt(0))|0;return String(h)},
+  items(){ if(this.mem) return this.mem; let v=null; try{v=JSON.parse(localStorage.getItem('eqt_demo_items')||'null')}catch(e){}
+    this.mem=v||clone(window.SEED_ITEMS||[]); return this.mem; },
+  persist(){LS.set('eqt_demo_items',JSON.stringify(this.mem))},
+  getCred(){ if(this.cred) return this.cred; try{this.cred=JSON.parse(localStorage.getItem('eqt_demo_cred')||'null')}catch(e){} return this.cred; },
+  getAuthState(){return{initialized:!!this.getCred()}},
+  setupAccount(u,p){ if(this.getCred()) throw new Error('帳號已經建立過了，請直接登入。'); u=String(u||'').trim();
+    if(u.length<3) throw new Error('帳號至少 3 個字元。'); if(String(p||'').length<6) throw new Error('密碼至少 6 個字元。');
+    this.cred={u,p:this.hash(p)}; LS.set('eqt_demo_cred',JSON.stringify(this.cred)); return 'demo'; },
+  login(u,p){ const c=this.getCred(); if(!c) throw new Error('尚未建立帳號。'); if(c.u!==String(u).trim()||c.p!==this.hash(String(p))) throw new Error('帳號或密碼錯誤。'); return 'demo'; },
+  logout(){return true},
+  listItems(){return{items:clone(this.items()),meta:{demo:true}}},
+  saveItem(t,it){ const all=this.items(); let cur=it.id&&all.find(x=>x.id===it.id);
+    if(!cur){ const max=all.reduce((m,x)=>Math.max(m,+String(x.id).replace(/\D/g,'')||0),0); cur={id:'E'+String(max+1).padStart(3,'0'),files:[],folderId:''}; all.push(cur); }
+    Object.keys(it).forEach(k=>{if(!['id','files','folderId'].includes(k)) cur[k]=it[k]});
+    const d=new Date(); cur.updatedAt=ymd(d)+' '+pad(d.getHours())+':'+pad(d.getMinutes()); this.persist(); return clone(cur); },
+  deleteItem(t,id){ this.mem=this.items().filter(x=>x.id!==id); this.persist(); return true; },
+  uploadFile(t,id,name,mime,b64,size){ const it=this.items().find(x=>x.id===id); const d=new Date();
+    it.files=(it.files||[]).concat([{id:'f'+Date.now(),name,url:'',size,mime,date:ymd(d)+' '+pad(d.getHours())+':'+pad(d.getMinutes())}]); this.persist(); return{files:it.files,folderId:''}; },
+  deleteFile(t,id,fid){ const it=this.items().find(x=>x.id===id); it.files=(it.files||[]).filter(f=>f.id!==fid); this.persist(); return{files:it.files,folderId:''}; },
+  exportGantt(){ throw new Error('預覽版不能匯出。正式版會在雲端硬碟「甘特圖匯出」資料夾產生 Excel 檔並直接下載。'); }
+};
+
+/* ---------- state ---------- */
+const S={token:LS.get(TK),items:[],meta:{},view:(location.hash==='#gantt'||LS.get('eqt_view')==='gantt')?'gantt':'list',
+  f:{q:'',dept:'',status:'',source:''},sort:'id',zoom:LS.get('eqt_zoom')||'week',draft:null,dirty:false,uploading:[],arm:null};
+
+const app=$('#app');
+function toast(t,bad){ const el=document.createElement('div'); el.className='toast'+(bad?' bad':''); el.textContent=t; document.body.appendChild(el); setTimeout(()=>el.remove(),bad?5200:2600); }
+
+/* ---------- status helpers ---------- */
+function prog(it){const t=it.todos||[];return{d:t.filter(x=>x.done).length,n:t.length}}
+function statusOf(it){const p=prog(it); if(p.n&&p.d===p.n) return 'done'; if(p.d>0||it.poDate||it.arrivalDate) return 'doing'; return 'todo';}
+function isOverdue(it){return statusOf(it)!=='done'&&!it.arrivalDate&&it.eta&&until(it.eta)<0}
+function isSoon(it){return statusOf(it)!=='done'&&!it.arrivalDate&&it.eta&&until(it.eta)>=0&&until(it.eta)<=30}
+const ST_LABEL={todo:'未開始',doing:'進行中',done:'已完成'};
+function chip(it){ if(isOverdue(it)) return '<span class="chip bad">逾期</span>'; const s=statusOf(it); return `<span class="chip s-${s}">${ST_LABEL[s]}</span>`; }
+
+/* ---------- boot / auth ---------- */
+async function boot(){
+  if(!GAS&&!API_URL&&!DEMO){ app.innerHTML=`<div class="login"><div class="card"><h1>泰國新廠設備追蹤</h1><p>網頁還沒連上資料庫。</p><div class="note">請把 Google Apps Script 部署後得到的網址（…/exec）貼到 GitHub 上 config.js 的 API_URL，存檔後約 1 分鐘重新整理這個頁面。</div></div></div>`; return; }
+  if(S.token){ return loadData(); }
+  app.innerHTML='<div class="loading"><div><div class="spin"></div>連線中…</div></div>';
+  let st; try{ st=await call('getAuthState'); }catch(e){ app.innerHTML=`<div class="loading">無法連線：${esc(msg(e))}</div>`; return; }
+  renderLogin(st.initialized);
+}
+function renderLogin(init){
+  app.innerHTML=`<div class="login"><form class="card" id="lf" autocomplete="on">
+    <div><h1>泰國新廠設備追蹤</h1><p>${init?'請登入':'第一次使用：建立登入帳號'}</p></div>
+    ${init?'':'<div class="note">這組帳號密碼建立後就固定使用，網頁上無法修改，請記下來交給需要的同事。</div>'}
+    ${GAS?'':'<div class="note">預覽版：帳密只存在這台瀏覽器，用來試用登入流程。</div>'}
+    <div><label class="lab" for="lu">帳號</label><input class="inp" id="lu" name="username" autocomplete="username" required></div>
+    <div><label class="lab" for="lp">密碼</label><input class="inp" id="lp" type="password" name="password" autocomplete="${init?'current-password':'new-password'}" required></div>
+    ${init?'':'<div><label class="lab" for="lp2">再輸入一次密碼</label><input class="inp" id="lp2" type="password" autocomplete="new-password" required></div>'}
+    <div class="err" id="le"></div>
+    <button class="btn primary" id="lb" type="submit">${init?'登入':'建立帳號並登入'}</button>
+  </form></div>`;
+  $('#lf').addEventListener('submit',async e=>{
+    e.preventDefault(); const u=$('#lu').value, p=$('#lp').value, er=$('#le'), b=$('#lb'); er.textContent='';
+    if(!init && p!==$('#lp2').value){ er.textContent='兩次輸入的密碼不一樣。'; return; }
+    b.disabled=true; b.textContent='處理中…';
+    try{ S.token=await call(init?'login':'setupAccount',u,p); LS.set(TK,S.token); loadData(); }
+    catch(x){ er.textContent=msg(x); b.disabled=false; b.textContent=init?'登入':'建立帳號並登入'; }
+  });
+}
+async function loadData(){
+  app.innerHTML='<div class="loading"><div><div class="spin"></div>載入設備清單…<br><small>第一次啟動會建立試算表與雲端資料夾，約需 10–30 秒</small></div></div>';
+  try{ const r=await authed('listItems'); S.items=r.items||[]; S.meta=r.meta||{}; renderShell(); }
+  catch(e){ if(S.token) app.innerHTML=`<div class="loading"><div>載入失敗：${esc(msg(e))}<br><br><button class="btn" id="rt">重試</button></div></div>`, $('#rt')&&($('#rt').onclick=loadData); }
+}
+async function doLogout(){ try{await call('logout',S.token)}catch(e){} S.token=null; LS.del(TK); boot(); }
+
+/* ---------- shell ---------- */
+function renderShell(){
+  app.innerHTML=`
+  <header class="bar"><div class="wrap">
+    <div class="brand"><b>泰國新廠設備追蹤</b><span>BOI 進口設備 · 交機 · 調機 · 文件</span></div>
+    <div class="bar-actions">
+      <button class="btn primary" id="addBtn">＋ 新增設備</button>
+      <button class="btn ghost hide-sm" id="outBtn">登出</button>
+    </div>
+  </div></header>
+  ${DEMO?'<div class="demo-band"><div class="wrap">預覽版：資料只存在這台瀏覽器，上傳的檔案不會進雲端硬碟。甘特圖裡的日期是示範用的範例，正式版從你的 Excel 匯入、日期是空白。</div></div>':''}
+  <main class="wrap">
+    <section class="tiles" id="tiles"></section>
+    <div class="overall" id="overall"></div>
+    <section class="depts" id="depts"></section>
+    <section class="filters">
+      <input class="inp search" id="q" type="search" placeholder="搜尋設備、規格、廠商、編號…" value="${esc(S.f.q)}" aria-label="搜尋">
+      <select class="inp" id="fd" aria-label="部門"><option value="">全部部門</option>${deptList().map(d=>`<option${S.f.dept===d?' selected':''}>${esc(d)}</option>`).join('')}</select>
+      <select class="inp" id="fs" aria-label="狀態"><option value="">全部狀態</option>${[['todo','未開始'],['doing','進行中'],['done','已完成'],['overdue','逾期'],['soon','30 天內交機'],['tune','有調機日期']].map(([v,l])=>`<option value="${v}"${S.f.status===v?' selected':''}>${l}</option>`).join('')}</select>
+      <select class="inp" id="fo" aria-label="採購來源"><option value="">全部來源</option>${SOURCES.map(d=>`<option${S.f.source===d?' selected':''}>${d}</option>`).join('')}</select>
+      <select class="inp" id="so" aria-label="排序">${[['id','依編號'],['eta','依預計交機日'],['tune','依調機日'],['prog','依進度（少→多）'],['dept','依部門']].map(([v,l])=>`<option value="${v}"${S.sort===v?' selected':''}>${l}</option>`).join('')}</select>
+      <div class="seg" role="tablist"><button id="vList" class="${S.view==='list'?'on':''}">清單</button><button id="vGantt" class="${S.view==='gantt'?'on':''}">甘特圖</button></div>
+      <span class="count" id="count"></span>
+    </section>
+    <section id="view"></section>
+  </main>
+  <button class="btn ghost" id="outBtn2" style="margin:0 auto 32px;display:flex">登出</button>`;
+  $('#addBtn').onclick=()=>openItem(null);
+  $('#outBtn').onclick=doLogout; $('#outBtn2').onclick=doLogout;
+  $('#q').oninput=e=>{S.f.q=e.target.value;renderView()};
+  $('#fd').onchange=e=>{S.f.dept=e.target.value;renderSummary();renderView()};
+  $('#fs').onchange=e=>{S.f.status=e.target.value;renderSummary();renderView()};
+  $('#fo').onchange=e=>{S.f.source=e.target.value;renderView()};
+  $('#so').onchange=e=>{S.sort=e.target.value;renderView()};
+  $('#vList').onclick=()=>setView('list'); $('#vGantt').onclick=()=>setView('gantt');
+  renderSummary(); renderView();
+}
+function setView(v){ S.view=v; LS.set('eqt_view',v); try{history.replaceState(null,'',v==='gantt'?'#gantt':location.pathname+location.search)}catch(e){}
+  $('#vList').className=v==='list'?'on':''; $('#vGantt').className=v==='gantt'?'on':''; renderView(); }
+function deptList(){ const s=new Set(DEPTS); S.items.forEach(i=>i.dept&&s.add(i.dept)); return [...s]; }
+
+function renderSummary(){
+  const it=S.items, n=it.length;
+  const c={all:n,todo:0,doing:0,done:0,overdue:0,soon:0}; let td=0,tn=0;
+  it.forEach(x=>{c[statusOf(x)]++; if(isOverdue(x))c.overdue++; if(isSoon(x))c.soon++; const p=prog(x); td+=p.d; tn+=p.n;});
+  const T=[['','全部設備',c.all,''],['todo','未開始',c.todo,''],['doing','進行中',c.doing,'t-doing'],['done','已完成',c.done,'t-done'],['overdue','逾期未交機',c.overdue,'t-bad'],['soon','30 天內交機',c.soon,'t-soon']];
+  $('#tiles').innerHTML=T.map(([k,l,v,cl])=>`<button class="tile ${cl} ${S.f.status===k?'on':''}" data-k="${k}"><small>${l}</small><strong>${v}</strong></button>`).join('');
+  $('#tiles').querySelectorAll('.tile').forEach(b=>b.onclick=()=>{S.f.status=S.f.status===b.dataset.k?'':b.dataset.k; $('#fs').value=S.f.status; renderSummary(); renderView();});
+  const sums={}; it.forEach(x=>{const v=Number(x.totalPrice); if(v>0){sums[x.currency||'CNY']=(sums[x.currency||'CNY']||0)+v}});
+  const pct=tn?Math.round(td/tn*100):0;
+  $('#overall').innerHTML=`<span>待辦完成 <b class="mono">${td}/${tn}</b>（${pct}%）</span><div class="meter" role="img" aria-label="整體待辦完成 ${pct}%"><i style="width:${pct}%"></i></div>
+    <span>預算合計 ${Object.keys(sums).map(k=>`<b class="mono">${k} ${money(sums[k])}</b>`).join(' · ')||'—'}</span>
+    <span class="links">${S.meta.sheetUrl?`<a href="${esc(S.meta.sheetUrl)}" target="_blank" rel="noopener">開啟 Google 試算表</a>`:''}${S.meta.rootUrl?`<a href="${esc(S.meta.rootUrl)}" target="_blank" rel="noopener">開啟雲端資料夾</a>`:''}</span>`;
+  const dm={}; it.forEach(x=>{const d=x.dept||'未分類'; dm[d]=dm[d]||{n:0,done:0,td:0,tn:0}; dm[d].n++; if(statusOf(x)==='done')dm[d].done++; const p=prog(x); dm[d].td+=p.d; dm[d].tn+=p.n;});
+  $('#depts').innerHTML=Object.keys(dm).map(d=>{const v=dm[d],p=v.tn?Math.round(v.td/v.tn*100):0;
+    return `<button class="dept ${S.f.dept===d?'on':''}" data-d="${esc(d)}"><div class="top">${esc(d)}<span>${v.done}/${v.n} 完成</span></div><div class="meter" aria-label="${p}%"><i style="width:${p}%"></i></div></button>`}).join('');
+  $('#depts').querySelectorAll('.dept').forEach(b=>b.onclick=()=>{S.f.dept=S.f.dept===b.dataset.d?'':b.dataset.d; $('#fd').value=S.f.dept; renderSummary(); renderView();});
+}
+
+function filtered(){
+  const q=S.f.q.trim().toLowerCase();
+  let r=S.items.filter(x=>{
+    if(S.f.dept&&(x.dept||'未分類')!==S.f.dept) return false;
+    if(S.f.source&&x.source!==S.f.source) return false;
+    const s=S.f.status;
+    if(s==='overdue'&&!isOverdue(x)) return false;
+    if(s==='soon'&&!isSoon(x)) return false;
+    if(s==='tune'&&!(x.tuneStart||x.tuneEnd)) return false;
+    if(['todo','doing','done'].includes(s)&&statusOf(x)!==s) return false;
+    if(q){ const h=[x.id,x.name,x.nameEn,x.spec,x.vendor,x.area,x.dept,x.tagNo,x.owner,x.note].join(' ').toLowerCase(); if(h.indexOf(q)<0) return false; }
+    return true;
+  });
+  const key={
+    id:x=>x.id, dept:x=>(x.dept||'')+x.id, eta:x=>(x.arrivalDate||x.eta||'9999')+x.id,
+    tune:x=>(x.tuneStart||x.tuneEnd||'9999')+x.id, prog:x=>{const p=prog(x);return String(Math.round((p.n?p.d/p.n:0)*1000)).padStart(4,'0')+x.id}
+  }[S.sort];
+  return r.sort((a,b)=>key(a)<key(b)?-1:key(a)>key(b)?1:0);
+}
+
+function renderView(){ const r=filtered(); $('#count').textContent=`顯示 ${r.length} / ${S.items.length} 項`; S.view==='gantt'?renderGantt(r):renderList(r); }
+
+function etaCell(it){
+  if(it.arrivalDate) return `<span class="t-ok">已交機 ${fmtD(it.arrivalDate)}</span>`;
+  if(!it.eta) return '<span class="muted">未定</span>';
+  const u=until(it.eta);
+  if(u<0&&statusOf(it)!=='done') return `<span class="t-bad">${fmtD(it.eta)}<br><small>逾期 ${-u} 天</small></span>`;
+  return `<span class="${u<=30?'t-warn':''}">${fmtD(it.eta)}${u<=30?`<br><small>還有 ${u} 天</small>`:''}</span>`;
+}
+function renderList(r){
+  const v=$('#view');
+  if(!r.length){ v.innerHTML='<div class="list"><div class="empty">沒有符合條件的設備。換個篩選條件，或按「＋ 新增設備」。</div></div>'; return; }
+  v.innerHTML=`<div class="list" role="table">
+    <div class="row head" role="row"><span>編號</span><span>狀態</span><span>設備 / 規格</span><span>部門 / 站別</span><span>廠商</span><span class="c-qty">數量</span><span>預計交機</span><span>待辦進度</span><span class="c-files">附件</span></div>
+    ${r.map(it=>{const p=prog(it),pc=p.n?Math.round(p.d/p.n*100):0;
+      return `<div class="row" role="row" tabindex="0" data-id="${esc(it.id)}">
+        <span class="c-id mono">${esc(it.id)}</span>
+        <span class="c-st">${chip(it)}</span>
+        <span class="c-name"><b>${esc(it.name)}</b><small>${esc(it.spec||it.nameEn||'')}</small></span>
+        <span class="c-dept"><span>${esc(it.dept)}</span><span class="c-sub">${esc(it.area)}</span></span>
+        <span class="c-vendor"><span>${esc(it.vendor||'—')}</span><span class="c-sub">${esc(it.source)}</span></span>
+        <span class="c-qty mono">${esc(it.qty)} <small class="muted">${esc(it.unit)}</small></span>
+        <span class="c-eta">${etaCell(it)}</span>
+        <span class="c-prog"><div class="meter"><i style="width:${pc}%"></i></div><span>${p.d}/${p.n}</span></span>
+        <span class="c-files mono">${(it.files||[]).length||'—'}</span>
+      </div>`}).join('')}
+  </div>`;
+  v.querySelectorAll('.row[data-id]').forEach(el=>{ el.onclick=()=>openItem(el.dataset.id); el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openItem(el.dataset.id)}}; });
+}
+
+/* ---------- Gantt ---------- */
+function renderGantt(r){
+  const v=$('#view');
+  const rows=r.filter(x=>x.poDate||x.eta||x.arrivalDate||x.tuneStart||x.tuneEnd);
+  const missing=r.length-rows.length;
+  const pxd={day:26,week:9,month:3.2}[S.zoom]||9;
+  const tools=`<div class="gantt-tools">
+     <div class="seg"><button data-z="day" class="${S.zoom==='day'?'on':''}">日</button><button data-z="week" class="${S.zoom==='week'?'on':''}">週</button><button data-z="month" class="${S.zoom==='month'?'on':''}">月</button></div>
+     <button class="btn" id="xls">匯出 Excel</button>
+     <div class="legend"><span><i style="background:var(--po)"></i>下單 → 交機</span><span><i style="background:var(--accent)"></i>預計交機</span><span><i style="background:var(--ok)"></i>實際交機</span><span><i style="background:var(--tune)"></i>調機期間</span><span><i style="background:var(--bad);width:2px"></i>今天</span></div>
+   </div>`;
+  if(!rows.length){
+    v.innerHTML=tools+`<div class="gantt" style="margin-top:10px"><div class="empty">篩選結果裡還沒有設備填寫日期。<br>打開設備，在「交期與調機」填寫下單日、預計交機日、調機開始 / 完成日，就會出現在甘特圖上。</div></div>`;
+    bindGanttTools(r); return;
+  }
+  let min=null,max=null; const t0=pd(today());
+  rows.forEach(x=>['poDate','eta','arrivalDate','tuneStart','tuneEnd'].forEach(k=>{const d=pd(x[k]); if(!d)return; if(!min||d<min)min=d; if(!max||d>max)max=d;}));
+  if(t0<min) min=t0; if(t0>max) max=t0;
+  min=new Date(min.getFullYear(),min.getMonth(),1); max=new Date(max.getFullYear(),max.getMonth()+1,0);
+  const total=days(min,max)+1, W=Math.round(total*pxd), X=d=>Math.round(days(min,d)*pxd);
+  // header ticks
+  let head='',grid='';
+  for(let d=new Date(min);d<=max;d.setMonth(d.getMonth()+1)){
+    const x=X(d); head+=`<div class="g-month" style="left:${x}px">${d.getFullYear()}/${pad(d.getMonth()+1)}</div><div class="g-tick m" style="left:${x}px"></div>`;
+    grid+=`<div class="g-tick m" style="left:${x}px"></div>`;
+  }
+  if(S.zoom!=='month'){
+    for(let d=new Date(min);d<=max;d.setDate(d.getDate()+1)){
+      const wd=d.getDay(), x=X(d);
+      if(S.zoom==='day'){ head+=`<div class="g-tick" style="left:${x}px">${d.getDate()}</div>`; if(wd===1&&d.getDate()!==1) grid+=`<div class="g-wk" style="left:${x}px"></div>`; }
+      else if(wd===1&&d.getDate()!==1){ head+=`<div class="g-tick" style="left:${x}px">${d.getDate()}</div>`; grid+=`<div class="g-wk" style="left:${x}px"></div>`; }
+    }
+  }
+  const tx=X(t0)+Math.round(pxd/2);
+  const nameW=window.innerWidth<720?132:240;
+  let body='';
+  rows.forEach(x=>{
+    const po=pd(x.poDate),eta=pd(x.eta),arr=pd(x.arrivalDate),ts=pd(x.tuneStart),te=pd(x.tuneEnd)||ts, end=arr||eta;
+    let m='';
+    const tip=esc(`${x.name}｜下單 ${fmtD(x.poDate)||'—'}｜預計交機 ${fmtD(x.eta)||'—'}｜實際交機 ${fmtD(x.arrivalDate)||'—'}｜調機 ${fmtD(x.tuneStart)||'—'} ~ ${fmtD(x.tuneEnd)||'—'}`);
+    if(po&&end&&end>=po) m+=`<div class="g-bar po" style="left:${X(po)}px;width:${Math.max(4,X(end)-X(po)+pxd)}px" title="${tip}"></div>`;
+    if(ts) m+=`<div class="g-bar tune" style="left:${X(ts)}px;width:${Math.max(4,X(te)-X(ts)+pxd)}px" title="${tip}"></div>`;
+    if(eta&&!arr) m+=`<div class="g-dot ${isOverdue(x)?'late':'eta'}" style="left:${X(eta)+pxd/2}px" title="${tip}"></div>`;
+    if(arr) m+=`<div class="g-dot arr" style="left:${X(arr)+pxd/2}px" title="${tip}"></div>`;
+    body+=`<div class="g-row"><div class="g-cell g-name" data-id="${esc(x.id)}" tabindex="0"><b>${esc(x.name)}</b><small>${esc(x.id)} · ${esc(x.dept)}${x.vendor?' · '+esc(x.vendor):''}</small></div>
+      <div class="g-cell g-track" data-id="${esc(x.id)}">${grid}${m}</div></div>`;
+  });
+  v.innerHTML=tools+`
+    <p class="g-note">${rows.length} 項有日期${missing?`，另有 ${missing} 項尚未填日期（不顯示）`:''}。點設備名稱或色條可編輯。</p>
+    <div class="gantt"><div class="g-grid" style="--gname:${nameW}px;--gw:${W}px">
+      <div class="g-row g-hrow"><div class="g-head g-name">設備</div><div class="g-head g-track">${head}<div class="g-today" style="left:${tx}px"></div></div></div>
+      ${body}
+      <div class="g-today" style="left:${nameW+tx}px;top:46px"></div>
+    </div></div>`;
+  v.querySelectorAll('.g-name[data-id],.g-track[data-id]').forEach(el=>{ el.onclick=()=>openItem(el.dataset.id); el.onkeydown=e=>{if(e.key==='Enter'){openItem(el.dataset.id)}}; });
+  const g=$('.gantt',v); if(g){ g.scrollLeft=Math.max(0,tx-g.clientWidth/3); }
+  bindGanttTools(r);
+}
+function bindGanttTools(r){
+  document.querySelectorAll('[data-z]').forEach(b=>b.onclick=()=>{S.zoom=b.dataset.z;LS.set('eqt_zoom',S.zoom);renderView();});
+  const b=$('#xls'); if(!b) return;
+  b.onclick=async()=>{
+    b.disabled=true; b.textContent='產生中…';
+    try{
+      const res=await authed('exportGantt',r.map(x=>x.id));
+      let dl=false;
+      if(res.b64){ try{ const bin=atob(res.b64), u8=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i);
+        const url=URL.createObjectURL(new Blob([u8],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+        const a=document.createElement('a'); a.href=url; a.download='Equipment_Gantt_'+String(res.name||'').replace(/\D+/g,'_').replace(/^_|_$/g,'')+'.xlsx'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),4000); dl=true; }catch(e){} }
+      showExportDone(res,dl);
+    }catch(e){ toast(msg(e),true); }
+    b.disabled=false; b.textContent='匯出 Excel';
+  };
+}
+function showExportDone(res){
+  const box=document.createElement('div'); box.className='confirm'; box.style.marginTop='10px';
+  box.innerHTML=`<span>已匯出 ${res.count} 項。如果沒有自動下載，可從這裡開啟：</span>${res.xlsxUrl?`<a class="btn sm" href="${esc(res.xlsxUrl)}" target="_blank" rel="noopener">Excel 檔（雲端硬碟）</a>`:''}<a class="btn sm" href="${esc(res.sheetUrl)}" target="_blank" rel="noopener">Google 試算表版</a><button class="btn sm ghost">關閉</button>`;
+  box.querySelector('button').onclick=()=>box.remove();
+  $('.gantt-tools').after(box);
+}
+
+/* ---------- editor drawer ---------- */
+function newItem(){ return {id:'',tagNo:'',dept:S.f.dept||'',area:'',name:'',nameEn:'',spec:'',vendor:'',qty:1,unit:'台',currency:'CNY',unitPrice:'',totalPrice:'',source:'中國採購',payment:'未付款',owner:'',poDate:'',eta:'',arrivalDate:'',tuneStart:'',tuneEnd:'',leadTime:'',boi:'未送審',hsCode:'',origin:'',size:'',utilities:'',note:'',todos:TODO_TEMPLATE.map(t=>({t,done:false,at:''})),files:[],folderId:''}; }
+function openItem(id){
+  const it=id?S.items.find(x=>x.id===id):null; if(id&&!it) return;
+  S.draft=it?clone(it):newItem(); S.dirty=false; S.arm=null; S.uploading=[];
+  closeDrawer(true);
+  const sc=document.createElement('div'); sc.className='scrim'; sc.id='scrim'; sc.onclick=()=>tryClose();
+  const d=document.createElement('aside'); d.className='drawer'; d.id='drawer'; d.setAttribute('role','dialog'); d.setAttribute('aria-modal','true');
+  document.body.append(sc,d); document.body.style.overflow='hidden';
+  renderDrawer(); setTimeout(()=>{const f=$('#f_name'); if(f&&!id) f.focus();},50);
+}
+function closeDrawer(force){ const d=$('#drawer'),s=$('#scrim'); if(d)d.remove(); if(s)s.remove(); document.body.style.overflow=''; if(!force){S.draft=null;} }
+function tryClose(){ if(S.dirty){ showConfirm('有尚未儲存的變更，要放棄嗎？','放棄變更',()=>{S.dirty=false;closeDrawer()}); return; } closeDrawer(); }
+function onKey(e){ if(e.key==='Escape'&&$('#drawer')) tryClose(); }
+document.addEventListener('keydown',onKey);
+
+function fieldHTML([k,l,type,span,req,list]){
+  const v=S.draft[k]==null?'':S.draft[k], id='f_'+k, cls=span==='wide'?'wide':span==='half'?'half':'';
+  let input;
+  if(type==='select') input=`<select class="inp" id="${id}" data-k="${k}">${(list.includes(v)||v===''?list:[v,...list]).map(o=>`<option${o===v?' selected':''}>${esc(o)}</option>`).join('')}</select>`;
+  else if(type==='combo') input=`<input class="inp" id="${id}" data-k="${k}" list="dl_${k}" value="${esc(v)}"><datalist id="dl_${k}">${deptList().map(o=>`<option value="${esc(o)}">`).join('')}</datalist>`;
+  else if(type==='textarea') input=`<textarea class="inp" id="${id}" data-k="${k}">${esc(v)}</textarea>`;
+  else if(type==='num') input=`<input class="inp mono" id="${id}" data-k="${k}" inputmode="decimal" value="${esc(v)}">`;
+  else if(type==='date') input=`<input class="inp mono" id="${id}" data-k="${k}" type="date" value="${esc(v)}">`;
+  else input=`<input class="inp" id="${id}" data-k="${k}" value="${esc(v)}"${req?' required':''}>`;
+  return `<div class="${cls}"><label class="lab" for="${id}">${l}${req?' *':''}</label>${input}</div>`;
+}
+function renderDrawer(){
+  const d=$('#drawer'); if(!d) return; const it=S.draft, p=prog(it);
+  const fu=folderUrl(it.folderId);
+  d.innerHTML=`
+   <div class="d-head"><div class="t"><h2 id="dh">${esc(it.name)||'新增設備'}</h2>
+     <div class="sub">${it.id?`<span class="mono">${esc(it.id)}</span>`:'<span>尚未儲存</span>'}${it.id?chip(it):''}${it.updatedAt?`<span>更新於 ${esc(it.updatedAt)}</span>`:''}</div></div>
+     <button class="btn ghost" id="dclose" aria-label="關閉">✕</button></div>
+   <div class="d-body" id="dbody">
+     <section class="sec"><h3>待辦事項 <span class="mono">${p.d}/${p.n}</span></h3>
+       <div class="todos" id="todos">${(it.todos||[]).map((t,i)=>`<div class="todo ${t.done?'done':''}">
+          <input type="checkbox" id="td_${i}" data-i="${i}" ${t.done?'checked':''}><label class="tx" for="td_${i}">${esc(t.t)}</label>
+          ${t.at?`<span class="at">${esc(t.at.slice(5).replace('-','/'))}</span>`:''}<button class="x" data-del="${i}" aria-label="刪除待辦 ${esc(t.t)}">×</button></div>`).join('')||'<div class="muted">還沒有待辦事項</div>'}</div>
+       <form class="addrow" id="tadd"><input class="inp" id="tnew" placeholder="新增待辦，例如：確認電壓 380V"><button class="btn" type="submit">新增</button></form>
+     </section>
+     ${FORM.map(s=>`<section class="sec"><h3>${s.sec}</h3><div class="fgrid">${s.f.map(fieldHTML).join('')}</div></section>`).join('')}
+     <section class="sec"><h3>附件 / 文件 ${fu?`<a href="${esc(fu)}" target="_blank" rel="noopener" style="font-size:13px;letter-spacing:0">開啟雲端資料夾</a>`:''}</h3>
+       <label class="drop" id="drop" for="filepick" tabindex="0"><b>點這裡選擇檔案</b><span>或把檔案拖進來 · 報價單、合約、規格書、照片都可以 · 單檔 25 MB 以內</span>
+         <span style="font-size:12px">會存到雲端硬碟「泰國建廠設備文件 / ${esc(it.dept||'未分類')} / ${esc(it.name||'設備名稱')}」</span></label>
+       <div class="files" id="files"></div>
+     </section>
+   </div>
+   <div class="d-foot" id="dfoot"></div>`;
+  $('#dclose').onclick=tryClose;
+  renderFiles(); renderFoot();
+  // fields
+  d.querySelectorAll('[data-k]').forEach(el=>{ el.addEventListener('input',()=>onField(el)); el.addEventListener('change',()=>onField(el)); });
+  // todos
+  d.querySelectorAll('#todos input[type=checkbox]').forEach(cb=>cb.onchange=()=>{const t=S.draft.todos[+cb.dataset.i]; t.done=cb.checked; t.at=cb.checked?today():''; todoChanged();});
+  d.querySelectorAll('#todos [data-del]').forEach(b=>b.onclick=()=>{S.draft.todos.splice(+b.dataset.del,1); todoChanged();});
+  $('#tadd').onsubmit=e=>{e.preventDefault(); const v=$('#tnew').value.trim(); if(!v) return; S.draft.todos.push({t:v,done:false,at:''}); todoChanged(); setTimeout(()=>$('#tnew')&&$('#tnew').focus(),30);};
+  // drop zone
+  const dz=$('#drop');
+  dz.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();$('#filepick').click()}};
+  ['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.add('over')}));
+  ['dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.remove('over')}));
+  dz.addEventListener('drop',e=>{ if(e.dataTransfer&&e.dataTransfer.files.length) uploadFiles([...e.dataTransfer.files]); });
+}
+function onField(el){
+  const k=el.dataset.k; let v=el.value;
+  const old=S.draft[k];
+  S.draft[k]=v;
+  if(k==='qty'||k==='unitPrice'){ // 自動帶出總價
+    const q=parseFloat(k==='qty'?v:S.draft.qty), u=parseFloat(k==='unitPrice'?v:S.draft.unitPrice);
+    const oq=parseFloat(k==='qty'?old:S.draft.qty), ou=parseFloat(k==='unitPrice'?old:S.draft.unitPrice);
+    const tp=parseFloat(S.draft.totalPrice);
+    if(!isNaN(q)&&!isNaN(u)&&(S.draft.totalPrice===''||isNaN(tp)||Math.abs(tp-oq*ou)<0.01)){ S.draft.totalPrice=Math.round(q*u*100)/100; const t=$('#f_totalPrice'); if(t)t.value=S.draft.totalPrice; }
+  }
+  if(k==='name'){ const h=$('#dh'); if(h) h.textContent=v||'新增設備'; }
+  if(!S.dirty){S.dirty=true; renderFoot();}
+}
+async function todoChanged(){
+  const keepScroll=$('#dbody')?$('#dbody').scrollTop:0;
+  if(S.draft.id){ // 待辦勾選直接存檔
+    renderDrawer(); $('#dbody').scrollTop=keepScroll;
+    await saveDraft(true);
+  } else { S.dirty=true; renderDrawer(); $('#dbody').scrollTop=keepScroll; }
+}
+function renderFoot(){
+  const f=$('#dfoot'); if(!f) return;
+  f.innerHTML=`${S.draft.id?`<button class="btn danger ${S.arm==='del'?'armed':''}" id="ddel">${S.arm==='del'?'再按一次確定刪除':'刪除'}</button>`:''}
+    <span class="state ${S.dirty?'dirty':''}">${S.saving?'儲存中…':S.dirty?'有未儲存的變更':S.draft.id?'已儲存':''}</span><span class="sp"></span>
+    <button class="btn" id="dcancel">關閉</button><button class="btn primary" id="dsave" ${S.saving?'disabled':''}>儲存</button>`;
+  $('#dsave').onclick=()=>saveDraft(false);
+  $('#dcancel').onclick=tryClose;
+  const del=$('#ddel'); if(del) del.onclick=async()=>{
+    if(S.arm!=='del'){ S.arm='del'; renderFoot(); setTimeout(()=>{if(S.arm==='del'){S.arm=null;renderFoot()}},4000); return; }
+    S.arm=null; del.disabled=true;
+    try{ await authed('deleteItem',S.draft.id); S.items=S.items.filter(x=>x.id!==S.draft.id); S.dirty=false; closeDrawer(); renderSummary(); renderView(); toast('已刪除（雲端資料夾裡的檔案保留）'); }
+    catch(e){ toast(msg(e),true); renderFoot(); }
+  };
+}
+function showConfirm(text,okLabel,ok){
+  const f=$('#dfoot'); if(!f) return;
+  f.innerHTML=`<div class="confirm"><span>${esc(text)}</span><button class="btn sm" id="cok">${esc(okLabel)}</button><button class="btn sm primary" id="cno">繼續編輯</button></div>`;
+  $('#cok').onclick=ok; $('#cno').onclick=renderFoot;
+}
+function numOrBlank(v){ if(v===''||v==null) return ''; const n=Number(String(v).replace(/,/g,'')); return isNaN(n)?String(v):n; }
+async function saveDraft(silent){
+  const d=S.draft; if(!d) return;
+  if(!String(d.name||'').trim()){ toast('請先填寫設備名稱。',true); const f=$('#f_name'); if(f) f.focus(); return; }
+  const out={}; Object.keys(d).forEach(k=>{ if(!['files','folderId','updatedAt'].includes(k)) out[k]=d[k]; });
+  ['qty','unitPrice','totalPrice'].forEach(k=>out[k]=numOrBlank(out[k]));
+  S.saving=true; renderFoot();
+  try{
+    const saved=await authed('saveItem',out);
+    const i=S.items.findIndex(x=>x.id===saved.id);
+    if(i>=0) S.items[i]=saved; else S.items.push(saved);
+    const wasNew=!d.id;
+    if(S.draft===d){ S.draft=Object.assign(clone(saved),{files:saved.files||d.files||[]}); S.dirty=false; }
+    S.saving=false;
+    if($('#drawer')){ if(wasNew){ const sc=$('#dbody').scrollTop; renderDrawer(); $('#dbody').scrollTop=sc; } else { renderFoot(); const sub=$('.d-head .sub'); if(sub) sub.innerHTML=`<span class="mono">${esc(saved.id)}</span>${chip(saved)}<span>更新於 ${esc(saved.updatedAt||'')}</span>`; } }
+    renderSummary(); renderView();
+    if(!silent) toast('已儲存');
+    return saved;
+  }catch(e){ S.saving=false; renderFoot(); toast('儲存失敗：'+msg(e),true); }
+}
+
+/* ---------- files ---------- */
+function renderFiles(){
+  const box=$('#files'); if(!box) return; const fs=S.draft.files||[];
+  box.innerHTML=fs.map(f=>`<div class="file"><div class="nm">${f.url?`<a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.name)}</a>`:`<span>${esc(f.name)}</span>`}<small>${esc(f.date||'')} · ${fsize(f.size)}</small></div>
+     <button class="btn sm danger ${S.arm==='f'+f.id?'armed':''}" data-fid="${esc(f.id)}">${S.arm==='f'+f.id?'確定刪除':'刪除'}</button></div>`).join('')
+   + S.uploading.map(n=>`<div class="file up"><div class="nm"><span>${esc(n)}</span></div></div>`).join('')
+   + (!fs.length&&!S.uploading.length?'<div class="muted" style="padding-top:4px">還沒有附件</div>':'');
+  box.querySelectorAll('[data-fid]').forEach(b=>b.onclick=async()=>{
+    const fid=b.dataset.fid;
+    if(S.arm!=='f'+fid){ S.arm='f'+fid; renderFiles(); setTimeout(()=>{if(S.arm==='f'+fid){S.arm=null;renderFiles()}},4000); return; }
+    S.arm=null; b.disabled=true;
+    try{ applyFiles(await authed('deleteFile',S.draft.id,fid)); toast('檔案已移到雲端硬碟垃圾桶'); }catch(e){ toast(msg(e),true); renderFiles(); }
+  });
+}
+function applyFiles(r){
+  const id=S.draft.id; S.draft.files=r.files; if(r.folderId) S.draft.folderId=r.folderId;
+  const it=S.items.find(x=>x.id===id); if(it){ it.files=r.files; if(r.folderId) it.folderId=r.folderId; }
+  if(r.folderId&&!$('.sec h3 a')){ const sc=$('#dbody').scrollTop; const dirty=S.dirty; renderDrawer(); S.dirty=dirty; renderFoot(); $('#dbody').scrollTop=sc; } else renderFiles();
+  renderView();
+}
+const toB64=f=>new Promise((res,rej)=>{const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]||''); r.onerror=()=>rej(new Error('讀取檔案失敗')); r.readAsDataURL(f);});
+async function uploadFiles(list){
+  if(!S.draft) return;
+  if(!S.draft.id){ const s=await saveDraft(true); if(!s) return; }
+  for(const f of list){
+    if(f.size>MAXB){ toast(`「${f.name}」超過 25 MB，請直接放進雲端資料夾。`,true); continue; }
+    S.uploading.push(f.name); renderFiles();
+    try{ const b64=GAS?await toB64(f):''; applyFiles(await authed('uploadFile',S.draft.id,f.name,f.type||'',b64,f.size)); toast(`已上傳「${f.name}」`); }
+    catch(e){ toast(`「${f.name}」上傳失敗：${msg(e)}`,true); }
+    finally{ S.uploading.splice(S.uploading.indexOf(f.name),1); renderFiles(); }
+  }
+}
+$('#filepick').addEventListener('change',e=>{ const l=[...e.target.files]; e.target.value=''; if(l.length) uploadFiles(l); });
+
+window.addEventListener('resize',()=>{ if(S.view==='gantt'&&$('.gantt')){ clearTimeout(window._rz); window._rz=setTimeout(renderView,200);} });
+boot();
+})();
+</script>
+
+</body>
+</html>
