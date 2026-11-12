@@ -347,7 +347,10 @@ const FORM=[
  {sec:'交期與調機',f:[['poDate','下單日','date'],['eta','預計交機日','date'],['arrivalDate','實際交機日','date'],['tuneStart','調機開始日','date'],['tuneEnd','調機完成日','date'],['leadTime','交期說明','text'],]},
  {sec:'廠商與金額',f:[['vendor','設備廠商 / 品牌','text','half'],['source','採購來源','select','',0,SOURCES],['currency','幣別','select','',0,CURR],['unitPrice','單價','num'],['totalPrice','總價','num'],['payment','付款狀態','select','',0,PAY]]},
  {sec:'BOI / 海關',f:[['boi','BOI 狀態','select','',0,BOI],['hsCode','HS Code','text'],['origin','原產國','text']]},
- {sec:'廠務需求',f:[['size','尺寸 (長×寬×高)','text','wide'],['utilities','水 / 電 / 氣需求','textarea','wide']]},
+ {sec:'廠務需求（水電氣）',f:[['size','尺寸 (長×寬×高)','text','wide'],['power','用電規格 (V / Ph / kW)','combo','half',0,['無需用電','220V/1Ph/','220V/3Ph/','380V/3Ph/']],['water','純水 / 自來水','combo','',0,['N/A','Pure Water','Municipal Water','Cooling Water','Chilled Water']],
+   ['air','壓縮空氣 (MPa / L/min)','combo','half',0,['N/A','0.6MPa (200L/min)','0.6MPa (20 L/min)']],['gas','氮氣 / 特殊氣體','combo','',0,['N/A','N2','N2 (Opt)','N2O']],
+   ['drain','排水 / 廢水','combo','half',0,['N/A','General Drain','Industrial Waste Water']],['exhaust','廢氣 / 廢熱','combo','',0,['N/A','General / Heat Exhaust','VOCs / Organic Exhaust','Acid / Alkali Exhaust','Dust Exhaust']],
+   ['utilities','其他廠務備註','textarea','wide']]},
  {sec:'備註',f:[['note','備註','textarea','wide']]}
 ];
 
@@ -389,7 +392,7 @@ function termScore(t,nm,all){
 }
 function searchTerms(q){ return String(q||'').split(/[\s,，、]+/).map(norm).filter(Boolean); }
 function scoreItem(it,terms){
-  const nm=norm([it.name,it.nameEn].join(' ')), all=norm([it.id,it.name,it.nameEn,it.spec,it.vendor,it.area,it.dept,it.tagNo,it.owner,it.note,it.source,it.origin,(it.todos||[]).map(t=>t.note||'').join(' '),vendorText(it.vendor)].join(' '));
+  const nm=norm([it.name,it.nameEn].join(' ')), all=norm([it.id,it.name,it.nameEn,it.spec,it.vendor,it.area,it.dept,it.tagNo,it.owner,it.note,it.source,it.origin,it.power,it.water,it.air,it.gas,it.drain,it.exhaust,(it.todos||[]).map(t=>t.note||'').join(' '),vendorText(it.vendor)].join(' '));
   let sum=0; for(const t of terms){ const v=termScore(t,nm,all); if(!v) return 0; sum+=v; } return sum/terms.length;
 }
 function hl(text,q){
@@ -454,7 +457,8 @@ const Demo={
     Object.keys(it).forEach(k=>{if(!['id','files','folderId'].includes(k)) cur[k]=it[k]});
     const d=new Date(); cur.updatedAt=ymd(d)+' '+pad(d.getHours())+':'+pad(d.getMinutes()); this.persist(); return clone(cur); },
   bulkUpdate(t,ids,fields){ const d=new Date(), now=ymd(d)+' '+pad(d.getHours())+':'+pad(d.getMinutes()); const out=[];
-    ids.forEach(id=>{ const it=this.items().find(x=>x.id===id); if(!it) return; Object.assign(it,fields); it.updatedAt=now; out.push(clone(it)); }); this.persist(); return out; },
+    ids.forEach(id=>{ const it=this.items().find(x=>x.id===id); if(!it) return; Object.keys(fields).forEach(k=>{ if(k!=='todoOps') it[k]=fields[k]; }); if(fields.todoOps) it.todos=applyTodoOps(it.todos||[],fields.todoOps); it.updatedAt=now; out.push(clone(it)); }); this.persist(); return out; },
+  exportList(){ throw new Error('預覽版不能匯出。正式版會在雲端硬碟「甘特圖匯出」資料夾產生 Excel 檔（含水電氣統計）並直接下載。'); },
   deleteItem(t,id){ this.mem=this.items().filter(x=>x.id!==id); this.persist(); return true; },
   uploadFile(t,id,name,mime,b64,size){ const it=this.items().find(x=>x.id===id); const d=new Date();
     it.files=(it.files||[]).concat([{id:'f'+Date.now(),name,url:'',size,mime,date:ymd(d)+' '+pad(d.getHours())+':'+pad(d.getMinutes())}]); this.persist(); return{files:it.files,folderId:''}; },
@@ -638,7 +642,7 @@ function renderList(r){
     v.querySelectorAll('[data-sg]').forEach(b=>b.onclick=()=>openItem(b.dataset.sg));
     return;
   }
-  v.innerHTML=`<div class="list" role="table">
+  v.innerHTML=`<div class="gantt-tools list-tools" style="margin-bottom:10px"><button class="btn" id="xlsL" type="button">匯出 Excel（設備清單＋水電氣統計）</button><span class="g-note">依目前的篩選匯出 ${r.length} 項</span></div><div class="list" role="table">
     <div class="row head" role="row">${[['id','編號',''],['status','狀態',''],['name','設備 / 規格',''],['dept','部門 / 站別',''],['vendor','廠商',''],['qty','數量','c-qty'],['eta','預計交機',''],['prog','待辦進度',''],['files','附件','c-files']].map(([k,l,c])=>{const on=S.sort===k;
       return `<button class="sh ${c} ${on?'on':''}" data-sort="${k}" aria-label="依${l}排序${on?(S.dir>0?'，目前小到大':'，目前大到小'):''}">${l}<i>${on&&S.dir<0?'▼':'▲'}</i></button>`}).join('')}</div>
     ${r.map(it=>{const p=prog(it),pc=p.n?Math.round(p.d/p.n*100):0;
@@ -654,6 +658,7 @@ function renderList(r){
         <span class="c-files mono">${(it.files||[]).length||'—'}</span>
       </div>`}).join('')}
   </div>`;
+  $('#xlsL').onclick=()=>runExport($('#xlsL'),'exportList',r,'Equipment_List_','.list-tools');
   v.querySelectorAll('[data-sort]').forEach(b=>b.onclick=()=>{ const k=b.dataset.sort; setSort(k, S.sort===k?-S.dir:1); });
   v.querySelectorAll('.row[data-id]').forEach(el=>{ el.onclick=()=>openItem(el.dataset.id); el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openItem(el.dataset.id)}}; });
 }
@@ -719,28 +724,31 @@ function renderGantt(r){
 function bindGanttTools(r){
   document.querySelectorAll('[data-z]').forEach(b=>b.onclick=()=>{S.zoom=b.dataset.z;LS.set('eqt_zoom',S.zoom);renderView();});
   const b=$('#xls'); if(!b) return;
-  b.onclick=async()=>{
+  b.onclick=()=>runExport(b,'exportGantt',r,'Equipment_Gantt_','.gantt-tools');
+}
+async function runExport(b,fn,r,prefix,anchorSel){
+  const label=b.textContent;
     b.disabled=true; b.textContent='產生中…';
     try{
-      const res=await authed('exportGantt',r.map(x=>x.id));
+      const res=await authed(fn,r.map(x=>x.id));
       let dl=false;
       if(res.b64){ try{ const bin=atob(res.b64), u8=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i);
         const url=URL.createObjectURL(new Blob([u8],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
-        const a=document.createElement('a'); a.href=url; a.download='Equipment_Gantt_'+String(res.name||'').replace(/\D+/g,'_').replace(/^_|_$/g,'')+'.xlsx'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),4000); dl=true; }catch(e){} }
-      showExportDone(res,dl);
+        const a=document.createElement('a'); a.href=url; a.download=prefix+String(res.name||'').replace(/\D+/g,'_').replace(/^_|_$/g,'')+'.xlsx'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),4000); dl=true; }catch(e){} }
+      showExportDone(res,anchorSel);
     }catch(e){ toast(msg(e),true); }
-    b.disabled=false; b.textContent='匯出 Excel';
-  };
+    b.disabled=false; b.textContent=label;
 }
-function showExportDone(res){
+function showExportDone(res,anchorSel){
   const box=document.createElement('div'); box.className='confirm'; box.style.marginTop='10px';
   box.innerHTML=`<span>已匯出 ${res.count} 項。如果沒有自動下載，可從這裡開啟：</span>${res.xlsxUrl?`<a class="btn sm" href="${esc(res.xlsxUrl)}" target="_blank" rel="noopener">Excel 檔（雲端硬碟）</a>`:''}<a class="btn sm" href="${esc(res.sheetUrl)}" target="_blank" rel="noopener">Google 試算表版</a><button class="btn sm ghost">關閉</button>`;
   box.querySelector('button').onclick=()=>box.remove();
-  $('.gantt-tools').after(box);
+  const prev=document.querySelector('.export-done'); if(prev) prev.remove(); box.classList.add('export-done');
+  $(anchorSel).after(box);
 }
 
 /* ---------- editor drawer ---------- */
-function newItem(){ return {id:'',tagNo:'',dept:S.f.dept||'',area:'',name:'',nameEn:'',spec:'',vendor:'',qty:1,unit:'台',currency:'CNY',unitPrice:'',totalPrice:'',source:'中國採購',payment:'未付款',owner:'',poDate:'',eta:'',arrivalDate:'',tuneStart:'',tuneEnd:'',leadTime:'',boi:'未送審',hsCode:'',origin:'',size:'',utilities:'',note:'',todos:TODO_TEMPLATE.map(t=>({t,done:false,at:''})),files:[],folderId:''}; }
+function newItem(){ return {id:'',tagNo:'',dept:S.f.dept||'',area:'',name:'',nameEn:'',spec:'',vendor:'',qty:1,unit:'台',currency:'CNY',unitPrice:'',totalPrice:'',source:'中國採購',payment:'未付款',owner:'',poDate:'',eta:'',arrivalDate:'',tuneStart:'',tuneEnd:'',leadTime:'',boi:'未送審',hsCode:'',origin:'',size:'',power:'',water:'',air:'',gas:'',drain:'',exhaust:'',utilities:'',note:'',todos:TODO_TEMPLATE.map(t=>({t,done:false,at:''})),files:[],folderId:''}; }
 function openItem(id){
   const it=id?S.items.find(x=>x.id===id):null; if(id&&!it) return;
   S.draft=it?clone(it):newItem(); S.orig=it?clone(it):null; S.dirty=false; S.arm=null; S.uploading=[];
@@ -751,7 +759,11 @@ function openItem(id){
   renderDrawer(); setTimeout(()=>{const f=$('#f_name'); if(f&&!id) f.focus();},50);
 }
 function closeDrawer(force){ const d=$('#drawer'),s=$('#scrim'); if(d)d.remove(); if(s)s.remove(); document.body.style.overflow=''; S.vEdit=null; S.noteEdit=null; if(!force){S.draft=null;} }
-function tryClose(){ if(S.dirty){ showConfirm('有尚未儲存的變更，要放棄嗎？','放棄變更',()=>{S.dirty=false;closeDrawer()}); return; } closeDrawer(); }
+function tryClose(){
+  if(S.dirty){ showConfirm('有尚未儲存的變更，要放棄嗎？','放棄變更',()=>{S.dirty=false;closeDrawer()}); return; }
+  if(S.draft&&S.draft.id&&!$('.modal')&&syncPlan(S.draft)){ maybeSync(S.draft,()=>closeDrawer()); return; } // 關閉前詢問是否同步待辦等變更
+  closeDrawer();
+}
 function onKey(e){ if(e.key!=='Escape') return; if($('.modal')){ closeModal(); return; } if($('#drawer')) tryClose(); }
 document.addEventListener('keydown',onKey);
 
@@ -759,7 +771,7 @@ function fieldHTML([k,l,type,span,req,list]){
   const v=S.draft[k]==null?'':S.draft[k], id='f_'+k, cls=span==='wide'?'wide':span==='half'?'half':'';
   let input;
   if(type==='select') input=`<select class="inp" id="${id}" data-k="${k}">${(list.includes(v)||v===''?list:[v,...list]).map(o=>`<option${o===v?' selected':''}>${esc(o)}</option>`).join('')}</select>`;
-  else if(type==='combo') input=`<input class="inp" id="${id}" data-k="${k}" list="dl_${k}" value="${esc(v)}"><datalist id="dl_${k}">${deptList().map(o=>`<option value="${esc(o)}">`).join('')}</datalist>`;
+  else if(type==='combo') input=`<input class="inp" id="${id}" data-k="${k}" list="dl_${k}" value="${esc(v)}"><datalist id="dl_${k}">${(k==='dept'?deptList():list).map(o=>`<option value="${esc(o)}">`).join('')}</datalist>`;
   else if(type==='textarea') input=`<textarea class="inp" id="${id}" data-k="${k}">${esc(v)}</textarea>`;
   else if(type==='num') input=`<input class="inp mono" id="${id}" data-k="${k}" inputmode="decimal" value="${esc(v)}">`;
   else if(type==='date') input=`<input class="inp mono" id="${id}" data-k="${k}" type="date" value="${esc(v)}">`;
@@ -919,49 +931,84 @@ const FIELD_LABEL={}; FORM.forEach(sec=>sec.f.forEach(f=>FIELD_LABEL[f[0]]=f[1])
 const SYNC_KEYS=Object.keys(FIELD_LABEL);
 const show=v=>v===''||v==null?'（空白）':String(v);
 function closeModal(){ document.querySelectorAll('.mscrim,.modal').forEach(e=>e.remove()); }
-function maybeSync(d){
-  const o=S.orig; if(!o){ S.orig=clone(d); return; }
+function todoDiff(o,d){
+  const A=o.todos||[], B=d.todos||[], byA={}, byB={}; A.forEach(t=>byA[t.t]=t); B.forEach(t=>byB[t.t]=t);
+  const ch=[];
+  B.forEach((t,i)=>{ const a=byA[t.t];
+    if(!a){ ch.push({kind:'add',label:`新增待辦「${t.t}」`,op:{t:t.t,after:i?B[i-1].t:'',done:!!t.done,at:t.at||'',note:t.note||''}}); return; }
+    if(!!a.done!==!!t.done) ch.push({kind:'set',label:`${t.done?'勾選完成':'取消勾選'}「${t.t}」`,op:{t:t.t,done:!!t.done,at:t.at||''}});
+    if((a.note||'')!==(t.note||'')) ch.push({kind:'note',label:t.note?`「${t.t}」備註：${t.note}`:`清除「${t.t}」的備註`,op:{t:t.t,note:t.note||''}});
+  });
+  A.forEach(a=>{ if(!byB[a.t]) ch.push({kind:'remove',label:`刪除待辦「${a.t}」`,op:a.t}); });
+  const cB=B.filter(t=>byA[t.t]).map(t=>t.t), cA=A.filter(t=>byB[t.t]).map(t=>t.t);
+  if(cB.join('\u0001')!==cA.join('\u0001')) ch.push({kind:'order',label:'調整待辦順序（照這台的順序排）',op:B.map(t=>t.t)});
+  return ch;
+}
+// 與後端 applyTodoOps_ 相同：舊版後端時在瀏覽器套用
+function applyTodoOps(todos,ops){
+  let ts=todos.map(t=>Object.assign({},t)); const find=n=>ts.find(t=>t.t===n);
+  (ops.remove||[]).forEach(n=>{ ts=ts.filter(t=>t.t!==n); });
+  (ops.add||[]).forEach(a=>{ if(find(a.t)) return; const i=a.after?ts.findIndex(t=>t.t===a.after):-1; ts.splice(i+1,0,{t:a.t,done:!!a.done,at:a.at||'',note:a.note||''}); });
+  (ops.set||[]).forEach(o=>{ const t=find(o.t); if(t){ t.done=!!o.done; t.at=o.at||''; } });
+  (ops.note||[]).forEach(o=>{ const t=find(o.t); if(t) t.note=o.note||''; });
+  if(ops.order&&ops.order.length){ const pos={}; ops.order.forEach((n,i)=>pos[n]=i); ts=ts.map((t,i)=>({t,i})).sort((a,b)=>((a.t.t in pos)?pos[a.t.t]:1e6+a.i)-((b.t.t in pos)?pos[b.t.t]:1e6+b.i)).map(x=>x.t); }
+  return ts;
+}
+function syncPlan(d){
+  const o=S.orig; if(!o||!d.id) return null;
   const same=(a,b)=>String(a==null?'':a).trim()===String(b==null?'':b).trim();
   const changed=SYNC_KEYS.filter(k=>!same(o[k],d[k]));
+  const tch=todoDiff(o,d);
   const key=norm(o.name);
   const matches=S.items.filter(x=>x.id!==d.id&&key&&(norm(x.name)===key||norm(x.name)===norm(d.name)));
-  if(!changed.length||!matches.length){ S.orig=clone(d); return; }
-  showSync(d,o,changed,matches);
+  if((!changed.length&&!tch.length)||!matches.length) return null;
+  return {changed,tch,matches};
 }
-function showSync(d,o,changed,matches){
+function maybeSync(d,after){
+  const plan=syncPlan(d);
+  if(!plan){ S.orig=clone(d); if(after) after(); return; }
+  showSync(d,S.orig,plan,after);
+}
+function showSync(d,o,plan,after){
+  const {changed,tch,matches}=plan;
   closeModal();
   const sc=document.createElement('div'); sc.className='mscrim';
   const m=document.createElement('div'); m.className='modal'; m.setAttribute('role','dialog'); m.setAttribute('aria-modal','true'); m.setAttribute('aria-labelledby','mh');
   m.innerHTML=`<div class="m-body">
       <h2 id="mh">要同步到其他「${esc(o.name)}」嗎？</h2>
-      <p>還有 ${matches.length} 項設備也叫「${esc(o.name)}」。勾選要同步的欄位和設備，沒勾的不會改。</p>
-      <h3>你改了這些欄位</h3>
-      ${changed.map(k=>`<label class="ck"><input type="checkbox" data-sf="${k}" checked><span class="cb"><b>${esc(FIELD_LABEL[k])}</b><span><s>${esc(show(o[k]))}</s> → ${esc(show(d[k]))}</span></span></label>`).join('')}
+      <p>還有 ${matches.length} 項設備也叫「${esc(o.name)}」。勾選要同步的內容和設備，沒勾的不會改。</p>
+      ${changed.length?`<h3>你改了這些欄位</h3>
+      ${changed.map(k=>`<label class="ck"><input type="checkbox" data-sf="${k}" checked><span class="cb"><b>${esc(FIELD_LABEL[k])}</b><span><s>${esc(show(o[k]))}</s> → ${esc(show(d[k]))}</span></span></label>`).join('')}`:''}
+      ${tch.length?`<h3>待辦事項的變更</h3>
+      ${tch.map((c,i)=>`<label class="ck"><input type="checkbox" data-st="${i}" checked><span class="cb"><b>${esc(c.label)}</b></span></label>`).join('')}`:''}
       <h3>同名設備（${matches.length} 項）<button class="btn sm" type="button" id="sall">全選</button><button class="btn sm" type="button" id="snone">全不選</button></h3>
-      ${matches.map(x=>{const diff=changed.filter(k=>String(x[k]==null?'':x[k]).trim()!==String(d[k]==null?'':d[k]).trim());
+      ${matches.map(x=>{const diff=changed.filter(k=>String(x[k]==null?'':x[k]).trim()!==String(d[k]==null?'':d[k]).trim()); const p=prog(x);
         return `<label class="ck"><input type="checkbox" data-si="${esc(x.id)}" checked><span class="cb"><span><span class="mono">${esc(x.id)}</span> · ${esc(x.dept)}${x.area?' · '+esc(x.area):''}</span>
-          <small>${esc([x.spec,x.vendor,x.qty!==''&&x.qty!=null?x.qty+(x.unit||''):''].filter(Boolean).join(' · ')||'—')}</small>
-          <small>${diff.length?'目前：'+diff.map(k=>esc(FIELD_LABEL[k])+' '+esc(show(x[k]))).join('；'):'這些欄位已經一樣'}</small></span></label>`}).join('')}
+          <small>${esc([x.spec,x.vendor,x.qty!==''&&x.qty!=null?x.qty+(x.unit||''):''].filter(Boolean).join(' · ')||'—')} · 待辦 ${p.d}/${p.n}</small>
+          ${changed.length?`<small>${diff.length?'目前：'+diff.map(k=>esc(FIELD_LABEL[k])+' '+esc(show(x[k]))).join('；'):'這些欄位已經一樣'}</small>`:''}</span></label>`}).join('')}
     </div>
     <div class="m-foot"><button class="btn" type="button" id="sskip">不同步</button><button class="btn primary" type="button" id="sgo"></button></div>`;
   document.body.append(sc,m);
-  const upd=()=>{ const n=m.querySelectorAll('[data-si]:checked').length, f=m.querySelectorAll('[data-sf]:checked').length; const b=$('#sgo'); b.textContent=n&&f?`同步到勾選的 ${n} 項`:'請至少勾選一個欄位和一項設備'; b.disabled=!(n&&f); };
+  const upd=()=>{ const n=m.querySelectorAll('[data-si]:checked').length, f=m.querySelectorAll('[data-sf]:checked,[data-st]:checked').length; const b=$('#sgo'); b.textContent=n&&f?`同步到勾選的 ${n} 項`:'請至少勾選一項內容和一項設備'; b.disabled=!(n&&f); };
   m.querySelectorAll('input').forEach(i=>i.onchange=upd); upd();
   $('#sall').onclick=()=>{ m.querySelectorAll('[data-si]').forEach(i=>i.checked=true); upd(); };
   $('#snone').onclick=()=>{ m.querySelectorAll('[data-si]').forEach(i=>i.checked=false); upd(); };
-  const skip=()=>{ S.orig=clone(d); closeModal(); };
-  sc.onclick=skip; $('#sskip').onclick=skip;
+  const finish=()=>{ S.orig=clone(d); closeModal(); if(after) after(); };
+  sc.onclick=finish; $('#sskip').onclick=finish;
   $('#sgo').onclick=async()=>{
     const ids=[...m.querySelectorAll('[data-si]:checked')].map(i=>i.dataset.si);
     const fields={}; [...m.querySelectorAll('[data-sf]:checked')].forEach(i=>{ const k=i.dataset.sf; fields[k]=['qty','unitPrice','totalPrice'].includes(k)?numOrBlank(d[k]):d[k]; });
+    const sel=[...m.querySelectorAll('[data-st]:checked')].map(i=>tch[+i.dataset.st]);
+    if(sel.length){ const ops={set:[],note:[],add:[],remove:[],order:[]}; sel.forEach(c=>{ if(c.kind==='order') ops.order=c.op; else ops[c.kind].push(c.op); }); fields.todoOps=ops; }
     const b=$('#sgo'); b.disabled=true; b.textContent='同步中…';
     try{
       let updated;
       try{ updated=await authed('bulkUpdate',ids,fields); }
       catch(e){ if(!/未知的操作|bulkUpdate/.test(msg(e))) throw e; // 舊版後端：逐筆存檔
-        updated=[]; for(const id of ids){ const it=S.items.find(x=>x.id===id); const o2={}; Object.keys(it).forEach(k=>{ if(!['files','folderId','updatedAt'].includes(k)) o2[k]=it[k]; }); Object.assign(o2,fields); updated.push(await authed('saveItem',o2)); } }
+        updated=[]; for(const id of ids){ const it=S.items.find(x=>x.id===id); const o2={}; Object.keys(it).forEach(k=>{ if(!['files','folderId','updatedAt'].includes(k)) o2[k]=it[k]; });
+          Object.keys(fields).forEach(k=>{ if(k!=='todoOps') o2[k]=fields[k]; }); if(fields.todoOps) o2.todos=applyTodoOps(it.todos||[],fields.todoOps); updated.push(await authed('saveItem',o2)); } }
       (updated||[]).forEach(u=>{ const i=S.items.findIndex(x=>x.id===u.id); if(i>=0) S.items[i]=u; });
-      S.orig=clone(d); closeModal(); renderSummary(); renderView(); toast(`已同步 ${ids.length} 項設備`);
+      renderSummary(); renderView(); toast(`已同步 ${ids.length} 項設備`); finish();
     }catch(e){ toast('同步失敗：'+msg(e),true); upd(); }
   };
   setTimeout(()=>$('#sgo')&&$('#sgo').focus(),30);

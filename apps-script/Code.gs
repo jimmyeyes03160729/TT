@@ -21,14 +21,14 @@ const COLS = [
   ['source', '採購來源'], ['payment', '付款狀態'], ['owner', '負責人'],
   ['poDate', '下單日'], ['eta', '預計交機日'], ['arrivalDate', '實際交機日'], ['tuneStart', '調機開始日'], ['tuneEnd', '調機完成日'], ['leadTime', '交期說明'],
   ['boi', 'BOI狀態'], ['hsCode', 'HS Code'], ['origin', '原產國'], ['size', '尺寸'],
-  ['utilities', '水電氣需求'], ['note', '備註'],
+  ['power', '用電規格'], ['water', '純水/自來水'], ['air', '壓縮空氣'], ['gas', '氮氣/特殊氣體'], ['drain', '排水/廢水'], ['exhaust', '廢氣/廢熱'], ['utilities', '水電氣需求'], ['note', '備註'],
   ['progress', '待辦進度'], ['todos', '待辦清單(JSON)'], ['files', '附件(JSON)'],
   ['folderId', '雲端資料夾ID'], ['updatedAt', '最後更新']
 ];
 const EDITABLE = COLS.map(c => c[0]).filter(k => ['id', 'progress', 'files', 'folderId', 'updatedAt'].indexOf(k) < 0);
 
 /* ---------- API 入口（網頁放在 GitHub Pages，透過這裡讀寫資料） ---------- */
-const API = { getAuthState, setupAccount, login, logout, listItems, saveItem, deleteItem, uploadFile, deleteFile, exportGantt, saveVendor, bulkUpdate };
+const API = { getAuthState, setupAccount, login, logout, listItems, saveItem, deleteItem, uploadFile, deleteFile, exportGantt, exportList, saveVendor, bulkUpdate };
 
 function doPost(e) {
   let out;
@@ -151,7 +151,16 @@ function sheet_() {
 function headerKeys_(sh) {
   const labels = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
   const byLabel = {}; COLS.forEach(c => { byLabel[c[1]] = c[0]; byLabel[c[0]] = c[0]; });
-  return labels.map(l => byLabel[String(l).trim()] || null);
+  const keys = labels.map(l => byLabel[String(l).trim()] || null);
+  // 新版本多了欄位時，自動加到試算表最右邊
+  const missing = COLS.filter(c => keys.indexOf(c[0]) < 0);
+  if (missing.length) {
+    const start = labels.length + 1;
+    sh.getRange(1, start, Math.max(sh.getMaxRows(), 2), missing.length).setNumberFormat('@');
+    sh.getRange(1, start, 1, missing.length).setValues([missing.map(c => c[1])]).setFontWeight('bold').setBackground('#E3EDF7');
+    missing.forEach(c => keys.push(c[0]));
+  }
+  return keys;
 }
 
 function toRow_(it, keys) {
@@ -316,7 +325,8 @@ function saveItem(token, input) {
 function bulkUpdate(token, ids, fields) {
   check_(token);
   const keys = Object.keys(fields || {}).filter(k => EDITABLE.indexOf(k) >= 0 && k !== 'todos');
-  if (!keys.length || !ids || !ids.length) return [];
+  const ops = fields && fields.todoOps;
+  if ((!keys.length && !ops) || !ids || !ids.length) return [];
   const lock = LockService.getScriptLock(); lock.waitLock(30000);
   try {
     const db = readAll_();
@@ -326,6 +336,7 @@ function bulkUpdate(token, ids, fields) {
       const it = db.items.find(x => x.id === id); if (!it) return;
       const before = { name: it.name, dept: it.dept };
       keys.forEach(k => { it[k] = fields[k]; });
+      if (ops) it.todos = applyTodoOps_(it.todos || [], ops);
       it.updatedAt = now;
       if (it.folderId && (before.name !== it.name || before.dept !== it.dept)) {
         try {
@@ -338,6 +349,27 @@ function bulkUpdate(token, ids, fields) {
     });
     return out;
   } finally { lock.releaseLock(); }
+}
+
+/** 把一台設備的待辦變更（勾選、備註、新增、刪除、順序）套到另一台；以待辦名稱對應 */
+function applyTodoOps_(todos, ops) {
+  let ts = todos.map(t => Object.assign({}, t));
+  const find = n => ts.find(t => t.t === n);
+  (ops.remove || []).forEach(n => { ts = ts.filter(t => t.t !== n); });
+  (ops.add || []).forEach(a => {
+    if (find(a.t)) return;
+    const i = a.after ? ts.findIndex(t => t.t === a.after) : -1;
+    ts.splice(i + 1, 0, { t: a.t, done: !!a.done, at: a.at || '', note: a.note || '' });
+  });
+  (ops.set || []).forEach(o => { const t = find(o.t); if (t) { t.done = !!o.done; t.at = o.at || ''; } });
+  (ops.note || []).forEach(o => { const t = find(o.t); if (t) t.note = o.note || ''; });
+  if (ops.order && ops.order.length) {
+    const pos = {}; ops.order.forEach((n, i) => pos[n] = i);
+    ts = ts.map((t, i) => ({ t, i })).sort((a, b) => {
+      const pa = a.t.t in pos ? pos[a.t.t] : 1e6 + a.i, pb = b.t.t in pos ? pos[b.t.t] : 1e6 + b.i; return pa - pb;
+    }).map(x => x.t);
+  }
+  return ts;
 }
 
 function deleteItem(token, id) {
@@ -405,7 +437,7 @@ function exportGantt(token, ids) {
   for (let w = new Date(start); w <= max; w.setDate(w.getDate() + 7)) weeks.push(new Date(w));
   if (weeks.length > 150) weeks.length = 150;
 
-  const head = ['編號', '部門', '製程/站別', '設備名稱', '規格/型號', '設備廠商', '數量', '下單日', '預計交機日', '實際交機日', '調機開始日', '調機完成日', '待辦進度', '狀態', '待辦備註'];
+  const head = ['編號', '部門', '製程/站別', '設備名稱', '規格/型號', '設備廠商', '數量', '下單日', '預計交機日', '實際交機日', '調機開始日', '調機完成日', '待辦進度', '狀態', '待辦備註'].concat(UTIL_HEAD, ['總功率(kW)', '總用氣(L/min)']);
   const F = head.length;
   const C = { po: '#9DBBDD', ship: '#1C5D99', arr: '#1F7A4D', tune: '#E3A34A', none: '#FFFFFF', today: '#FBE4E1' };
   const today = d_(ymd_(new Date()));
@@ -416,7 +448,9 @@ function exportGantt(token, ids) {
     const t = x.todos || [], done = t.filter(y => y.done).length;
     const st = t.length && done === t.length ? '已完成' : (done || x.poDate || x.arrivalDate) ? '進行中' : '未開始';
     const tnote = t.filter(y => y.note).map(y => (y.done ? '✓' : '') + y.t + '：' + y.note).join('；');
+    const u = util_(x);
     values.push([x.id, x.dept, x.area, x.name, x.spec, x.vendor, x.qty, x.poDate, x.eta, x.arrivalDate, x.tuneStart, x.tuneEnd, done + '/' + t.length, st, tnote]
+      .concat(UTIL_KEYS.map(k => x[k]), [u.totalKw, u.totalLpm])
       .map(v => v === undefined || v === null ? '' : v).concat(weeks.map(() => '')));
     const po = d_(x.poDate), eta = d_(x.eta), arr = d_(x.arrivalDate), ts = d_(x.tuneStart), te = d_(x.tuneEnd) || ts;
     const shipEnd = arr || eta;
@@ -446,19 +480,153 @@ function exportGantt(token, ids) {
   lg.setValues([['圖例', '下單→交機', '預計交機週', '實際交機週', '調機期間', '本週']]);
   sh.getRange(values.length + 2, 2, 1, 5).setBackgrounds([[C.po, C.ship, C.arr, C.tune, C.today]]);
   sh.getRange(values.length + 2, 3, 1, 2).setFontColor('#FFFFFF');
-  SpreadsheetApp.flush();
+  buildUtilStats_(ss.insertSheet('水電氣統計'), items);
+  return finishExport_(ss, folder, '設備甘特圖_' + stamp + '.xlsx', items.length);
+}
 
+function finishExport_(ss, folder, name, count) {
+  SpreadsheetApp.flush();
   const resp = UrlFetchApp.fetch('https://docs.google.com/spreadsheets/d/' + ss.getId() + '/export?format=xlsx', {
     headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true
   });
   let xlsxUrl = '', b64 = '';
-  const name = '設備甘特圖_' + stamp + '.xlsx';
   if (resp.getResponseCode() === 200) {
     const blob = resp.getBlob().setName(name);
     xlsxUrl = folder.createFile(blob).getUrl();
     b64 = Utilities.base64Encode(blob.getBytes());
   }
-  return { sheetUrl: ss.getUrl(), xlsxUrl: xlsxUrl, name: name, b64: b64, count: items.length };
+  return { sheetUrl: ss.getUrl(), xlsxUrl: xlsxUrl, name: name, b64: b64, count: count };
+}
+
+/* ---------- 水電氣：解析與統計 ---------- */
+const UTIL_KEYS = ['power', 'water', 'air', 'gas', 'drain', 'exhaust'];
+const UTIL_HEAD = ['用電規格', '純水/自來水', '壓縮空氣', '氮氣/特殊氣體', '排水/廢水', '廢氣/廢熱'];
+function none_(v) { v = String(v == null ? '' : v).trim(); return !v || /^(n\/?a|無|无|-|—|無需用電|无需用电|不需要|不用|none)$/i.test(v); }
+function num_(s, re) { const m = String(s || '').match(re); return m ? Number(m[1]) : ''; }
+function qty_(x) { const q = Number(x.qty); return q > 0 ? q : 1; }
+function waterType_(s) {
+  if (none_(s)) return '';
+  if (/pure|純水|纯水|\bDI\b|RO/i.test(s)) return '純水';
+  if (/municipal|自來水|自来水|tap/i.test(s)) return '自來水';
+  if (/cool|chill|冷卻|冷却|冰水/i.test(s)) return '冷卻水 / 冰水';
+  return '一般用水（未分類）';
+}
+function util_(x) {
+  const q = qty_(x), p = String(x.power || '');
+  // 一台有多組電源時（例：380V/3Ph/1.5kW + 220V/1Ph/1.5kW）功率相加
+  const kws = (p.match(/\d+(?:\.\d+)?\s*kW/gi) || []).map(x => parseFloat(x));
+  const kw = none_(p) ? 0 : (kws.length ? kws.reduce((a, b) => a + b, 0) : (num_(p, /(\d+(?:\.\d+)?)\s*W\b/i) !== '' ? num_(p, /(\d+(?:\.\d+)?)\s*W\b/i) / 1000 : ''));
+  const v = num_(p, /(\d+)\s*V/i), ph = num_(p, /(\d)\s*Ph/i);
+  const airLpm = none_(x.air) ? 0 : num_(x.air, /([\d.]+)\s*L\s*\/\s*min/i);
+  const mpa = none_(x.air) ? '' : (String(x.air).match(/([\d.]+(?:\s*-\s*[\d.]+)?)\s*M(?:Pa|AP)/i) || [])[1] || '';
+  const waterLpm = none_(x.water) ? 0 : num_(x.water, /([\d.]+)\s*L\s*\/\s*min/i);
+  const round = n => n === '' ? '' : Math.round(n * 1000) / 1000;
+  return {
+    qty: q, v: v, ph: ph, kw: round(kw), totalKw: kw === '' ? '' : round(kw * q),
+    mpa: String(mpa).replace(/\s/g, ''), lpm: airLpm, totalLpm: airLpm === '' ? '' : round(airLpm * q),
+    waterType: waterType_(x.water), waterLpm: waterLpm, totalWaterLpm: waterLpm === '' ? '' : round(waterLpm * q)
+  };
+}
+function buildUtilStats_(sh, items) {
+  const rows = [], bold = [], add = (r, b) => { rows.push(r.concat(['', '', '', '']).slice(0, 4)); if (b) bold.push(rows.length); };
+  const group = (title, cols, keyFn, valFns) => {
+    add([title], true); add(cols, true);
+    const g = {}, order = [];
+    items.forEach(x => { const k = keyFn(x); if (k === null) return; if (!g[k]) { g[k] = []; order.push(k); } g[k].push(x); });
+    order.sort();
+    let tot = valFns.map(() => 0);
+    order.forEach(k => { const vals = valFns.map(f => g[k].reduce((a, x) => a + (Number(f(x)) || 0), 0)); vals.forEach((v, i) => tot[i] += v); add([k].concat(vals.map(v => Math.round(v * 1000) / 1000))); });
+    if (order.length > 1) add(['合計'].concat(tot.map(v => Math.round(v * 1000) / 1000)), true);
+    add(['']);
+  };
+  const U = {}; items.forEach(x => U[x.id] = util_(x));
+  add(['水電氣需求統計（依匯出的 ' + items.length + ' 項設備，數量已乘上台數）'], true); add(['']);
+  group('用電（依電壓 / 相數）', ['電壓 / 相數', '台數', '總功率 (kW)'],
+    x => none_(x.power) ? (String(x.power || '').trim() ? '無需用電' : '未填') : ((U[x.id].v ? U[x.id].v + 'V' : '電壓未標示') + (U[x.id].ph ? ' / ' + U[x.id].ph + 'Ph' : '')),
+    [x => U[x.id].qty, x => U[x.id].totalKw]);
+  group('用電（依部門）', ['部門', '台數', '總功率 (kW)'], x => none_(x.power) ? null : (x.dept || '未分類'), [x => U[x.id].qty, x => U[x.id].totalKw]);
+  group('純水 / 自來水', ['用水類型', '台數', '有標示流量的合計 (L/min)'], x => U[x.id].waterType || null, [x => U[x.id].qty, x => U[x.id].totalWaterLpm]);
+  group('壓縮空氣（依壓力）', ['壓力 (MPa)', '台數', '總用氣量 (L/min)'], x => none_(x.air) ? null : (U[x.id].mpa ? U[x.id].mpa + ' MPa' : '壓力未標示'), [x => U[x.id].qty, x => U[x.id].totalLpm]);
+  group('氮氣 / 特殊氣體', ['類型', '台數'], x => none_(x.gas) ? null : String(x.gas).trim(), [x => U[x.id].qty]);
+  group('排水 / 廢水', ['類型', '台數'], x => none_(x.drain) ? null : String(x.drain).trim(), [x => U[x.id].qty]);
+  group('廢氣 / 廢熱', ['類型', '台數'], x => none_(x.exhaust) ? null : String(x.exhaust).trim(), [x => U[x.id].qty]);
+  sh.getRange(1, 1, rows.length, 4).setValues(rows);
+  bold.forEach(r => sh.getRange(r, 1, 1, 4).setFontWeight('bold'));
+  sh.setColumnWidth(1, 260); sh.setColumnWidths(2, 3, 150);
+}
+
+/** 匯出設備清單（含水電氣需求與統計） */
+function exportList(token, ids) {
+  check_(token);
+  const db = readAll_();
+  const items = ids && ids.length ? db.items.filter(x => ids.indexOf(x.id) >= 0) : db.items;
+  if (!items.length) throw new Error('沒有可以匯出的設備。');
+  const head = ['編號', '部門', '製程/站別', '設備名稱', '規格/型號', '設備廠商', '數量', '單位', '採購來源', '預計交機日', '實際交機日', '調機開始日', '調機完成日', '待辦進度', '狀態', 'BOI狀態', '尺寸']
+    .concat(UTIL_HEAD, ['電壓(V)', '相數(Ph)', '單台功率(kW)', '總功率(kW)', '壓縮空氣壓力(MPa)', '單台用氣(L/min)', '總用氣(L/min)', '用水類型', '總用水(L/min)', '其他廠務備註', '待辦備註']);
+  const NUMS = ['數量', '電壓(V)', '相數(Ph)', '單台功率(kW)', '總功率(kW)', '單台用氣(L/min)', '總用氣(L/min)', '總用水(L/min)'];
+  const values = [head];
+  items.forEach(x => {
+    const t = x.todos || [], done = t.filter(y => y.done).length, u = util_(x);
+    const st = t.length && done === t.length ? '已完成' : (done || x.poDate || x.arrivalDate) ? '進行中' : '未開始';
+    values.push([x.id, x.dept, x.area, x.name, x.spec, x.vendor, x.qty, x.unit, x.source, x.eta, x.arrivalDate, x.tuneStart, x.tuneEnd, done + '/' + t.length, st, x.boi, x.size]
+      .concat(UTIL_KEYS.map(k => x[k]), [u.v, u.ph, u.kw, u.totalKw, u.mpa, u.lpm, u.totalLpm, u.waterType, u.totalWaterLpm, x.utilities,
+        t.filter(y => y.note).map(y => (y.done ? '✓' : '') + y.t + '：' + y.note).join('；')])
+      .map(v => v === undefined || v === null ? '' : v));
+  });
+  const stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd_HHmm');
+  const ss = SpreadsheetApp.create('設備清單_水電氣_' + stamp);
+  const folder = childFolder_(root_(), '甘特圖匯出');
+  DriveApp.getFileById(ss.getId()).moveTo(folder);
+  const sh = ss.getSheets()[0]; sh.setName('設備清單');
+  head.forEach((h, i) => { if (NUMS.indexOf(h) < 0) sh.getRange(1, i + 1, values.length, 1).setNumberFormat('@'); });
+  sh.getRange(1, 1, values.length, head.length).setValues(values);
+  sh.getRange(1, 1, 1, head.length).setFontWeight('bold').setBackground('#E3EDF7');
+  sh.setFrozenRows(1); sh.setFrozenColumns(4); sh.setColumnWidth(4, 180);
+  buildUtilStats_(ss.insertSheet('水電氣統計'), items);
+  return finishExport_(ss, folder, '設備清單_水電氣_' + stamp + '.xlsx', items.length);
+}
+
+/**
+ * 一次性：匯入「泰國設備清單_20261019」的水電氣資料（Import.gs 的 IMPORT_DATA），
+ * 並把舊的「水電氣需求」文字拆到新欄位。用法：選 importUtilities → 執行。
+ */
+function importUtilities() {
+  const lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    const db = readAll_();
+    const now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm');
+    const normN = s => String(s || '').replace(/[\s\-_/\\()（）]/g, '').toLowerCase();
+    let upd = 0, added = 0, migrated = 0; const skipped = [];
+    const data = Object.assign({ updates: [], newItems: [] }, (typeof IMPORT_DATA !== 'undefined' && IMPORT_DATA) || {});
+    // 1) 舊的「電: …；水: …」文字拆到新欄位（只填空白的欄位）
+    const MAP = { '電': 'power', '水': 'water', '氣': 'air', '特氣': 'gas', '排水': 'drain', '廢氣': 'exhaust' };
+    db.items.forEach(it => {
+      if (!it.utilities || UTIL_KEYS.some(k => it[k])) return;
+      const rest = [];
+      String(it.utilities).split('；').forEach(seg => {
+        const m = seg.match(/^\s*(電|水|氣|特氣|排水|廢氣)\s*[:：]\s*(.*)$/);
+        if (m && !it[MAP[m[1]]]) it[MAP[m[1]]] = m[2].trim(); else if (seg.trim()) rest.push(seg.trim());
+      });
+      it.utilities = rest.join('；'); it._dirty = true; migrated++;
+    });
+    // 2) 依名稱對應的設備：寫入新表的水電氣
+    data.updates.forEach(u => {
+      const it = db.items.find(x => x.id === u.id);
+      if (!it || (u.name && normN(it.name) !== normN(u.name))) { skipped.push(u.id + ' ' + (u.name || '')); return; }
+      UTIL_KEYS.forEach(k => { if (k in u.fields) it[k] = u.fields[k]; });
+      Object.keys(u.extra || {}).forEach(k => { if (EDITABLE.indexOf(k) >= 0) it[k] = u.extra[k]; });
+      it._dirty = true; upd++;
+    });
+    db.items.forEach(it => { if (it._dirty) { delete it._dirty; writeItem_(db, it); } });
+    // 3) 新表有、網站沒有的設備：新增
+    let max = db.items.reduce((m, x) => Math.max(m, Number(String(x.id).replace(/\D/g, '')) || 0), 0);
+    data.newItems.forEach(n => {
+      if (db.items.some(x => normN(x.name) === normN(n.name) && x.dept === n.dept && x.area === n.area && normN(x.spec) === normN(n.spec))) { skipped.push('（已存在）' + n.name); return; }
+      const it = Object.assign({ files: [], folderId: '' }, n, { id: 'E' + ('00' + (++max)).slice(-3), updatedAt: now });
+      db.items.push(it); writeItem_(db, it); added++;
+    });
+    Logger.log('舊資料拆欄位：' + migrated + ' 項；更新水電氣：' + upd + ' 項；新增設備：' + added + ' 項。' + (skipped.length ? '略過：' + skipped.join('、') : ''));
+  } finally { lock.releaseLock(); }
 }
 
 /**
