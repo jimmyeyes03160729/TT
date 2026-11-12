@@ -187,6 +187,14 @@ mark{background:var(--warn-soft);color:inherit;border-radius:2px;padding:0 1px}
 .todo .at{font:12px var(--mono);color:var(--muted)}
 .todo .x{border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:18px;line-height:1;padding:2px 6px;border-radius:4px}
 .todo .x:hover{color:var(--bad);background:var(--bad-soft)}
+.todo .grip{cursor:grab;color:var(--muted);font-size:14px;line-height:1;padding:4px 2px;user-select:none;touch-action:none}
+.todo .mv{border:1px solid transparent;background:transparent;color:var(--muted);cursor:pointer;width:28px;height:28px;border-radius:6px;font-size:13px;line-height:1;flex:none}
+.todo .mv:hover:not(:disabled){border-color:var(--line);color:var(--accent);background:var(--accent-soft)}
+.todo .mv:disabled{opacity:.25;cursor:default}
+.todo.dragging{opacity:.4}
+.todo.drop-before{box-shadow:inset 0 2px 0 var(--accent)}
+.todo.drop-after{box-shadow:inset 0 -2px 0 var(--accent)}
+@media (max-width:720px){ .todo .grip{display:none} .todo .mv{width:34px;height:34px;font-size:15px} }
 .addrow{display:flex;gap:8px;margin-top:10px}
 
 /* files */
@@ -672,10 +680,8 @@ function renderDrawer(){
      <div class="sub">${it.id?`<span class="mono">${esc(it.id)}</span>`:'<span>尚未儲存</span>'}${it.id?chip(it):''}${it.updatedAt?`<span>更新於 ${esc(it.updatedAt)}</span>`:''}</div></div>
      <button class="btn ghost" id="dclose" aria-label="關閉">✕</button></div>
    <div class="d-body" id="dbody">
-     <section class="sec"><h3>待辦事項 <span class="mono">${p.d}/${p.n}</span></h3>
-       <div class="todos" id="todos">${(it.todos||[]).map((t,i)=>`<div class="todo ${t.done?'done':''}">
-          <input type="checkbox" id="td_${i}" data-i="${i}" ${t.done?'checked':''}><label class="tx" for="td_${i}">${esc(t.t)}</label>
-          ${t.at?`<span class="at">${esc(t.at.slice(5).replace('-','/'))}</span>`:''}<button class="x" data-del="${i}" aria-label="刪除待辦 ${esc(t.t)}">×</button></div>`).join('')||'<div class="muted">還沒有待辦事項</div>'}</div>
+     <section class="sec"><h3>待辦事項 <span class="mono" id="tcount">${p.d}/${p.n}</span></h3>
+       <div class="todos" id="todos"></div>
        <form class="addrow" id="tadd"><input class="inp" id="tnew" placeholder="新增待辦，例如：確認電壓 380V"><button class="btn" type="submit">新增</button></form>
      </section>
      ${FORM.map(s=>`<section class="sec"><h3>${s.sec}</h3><div class="fgrid">${s.f.map(fieldHTML).join('')}</div></section>`).join('')}
@@ -691,8 +697,7 @@ function renderDrawer(){
   // fields
   d.querySelectorAll('[data-k]').forEach(el=>{ el.addEventListener('input',()=>onField(el)); el.addEventListener('change',()=>onField(el)); });
   // todos
-  d.querySelectorAll('#todos input[type=checkbox]').forEach(cb=>cb.onchange=()=>{const t=S.draft.todos[+cb.dataset.i]; t.done=cb.checked; t.at=cb.checked?today():''; todoChanged();});
-  d.querySelectorAll('#todos [data-del]').forEach(b=>b.onclick=()=>{S.draft.todos.splice(+b.dataset.del,1); todoChanged();});
+  renderTodos();
   $('#tadd').onsubmit=e=>{e.preventDefault(); const v=$('#tnew').value.trim(); if(!v) return; S.draft.todos.push({t:v,done:false,at:''}); todoChanged(); setTimeout(()=>$('#tnew')&&$('#tnew').focus(),30);};
   // drop zone
   const dz=$('#drop');
@@ -711,15 +716,52 @@ function onField(el){
     const tp=parseFloat(S.draft.totalPrice);
     if(!isNaN(q)&&!isNaN(u)&&(S.draft.totalPrice===''||isNaN(tp)||Math.abs(tp-oq*ou)<0.01)){ S.draft.totalPrice=Math.round(q*u*100)/100; const t=$('#f_totalPrice'); if(t)t.value=S.draft.totalPrice; }
   }
+  S.rev=(S.rev||0)+1;
   if(k==='name'){ const h=$('#dh'); if(h) h.textContent=v||'新增設備'; }
   if(!S.dirty){S.dirty=true; renderFoot();}
 }
-async function todoChanged(){
-  const keepScroll=$('#dbody')?$('#dbody').scrollTop:0;
-  if(S.draft.id){ // 待辦勾選直接存檔
-    renderDrawer(); $('#dbody').scrollTop=keepScroll;
-    await saveDraft(true);
-  } else { S.dirty=true; renderDrawer(); $('#dbody').scrollTop=keepScroll; }
+function renderTodos(focusSel){
+  const box=$('#todos'); if(!box) return; const ts=S.draft.todos||[];
+  const p=prog(S.draft); const c=$('#tcount'); if(c) c.textContent=p.d+'/'+p.n;
+  box.innerHTML=ts.map((t,i)=>`<div class="todo ${t.done?'done':''}" data-row="${i}" draggable="true">
+      <span class="grip" title="拖曳調整順序" aria-hidden="true">⋮⋮</span>
+      <input type="checkbox" id="td_${i}" data-i="${i}" ${t.done?'checked':''}><label class="tx" for="td_${i}">${esc(t.t)}</label>
+      ${t.at?`<span class="at">${esc(t.at.slice(5).replace('-','/'))}</span>`:''}
+      <button class="mv" data-up="${i}" ${i===0?'disabled':''} aria-label="往上移：${esc(t.t)}">▲</button>
+      <button class="mv" data-down="${i}" ${i===ts.length-1?'disabled':''} aria-label="往下移：${esc(t.t)}">▼</button>
+      <button class="x" data-del="${i}" aria-label="刪除待辦 ${esc(t.t)}">×</button></div>`).join('')||'<div class="muted">還沒有待辦事項</div>';
+  box.querySelectorAll('input[type=checkbox]').forEach(cb=>cb.onchange=()=>{const t=S.draft.todos[+cb.dataset.i]; t.done=cb.checked; t.at=cb.checked?today():''; todoChanged();});
+  box.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{S.draft.todos.splice(+b.dataset.del,1); todoChanged();});
+  box.querySelectorAll('[data-up]').forEach(b=>b.onclick=()=>moveTodo(+b.dataset.up,+b.dataset.up-1));
+  box.querySelectorAll('[data-down]').forEach(b=>b.onclick=()=>moveTodo(+b.dataset.down,+b.dataset.down+1));
+  // 電腦版：拖曳排序
+  let from=null;
+  box.querySelectorAll('.todo[data-row]').forEach(row=>{
+    row.addEventListener('dragstart',e=>{from=+row.dataset.row; row.classList.add('dragging'); try{e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain','todo')}catch(x){}});
+    row.addEventListener('dragend',()=>{row.classList.remove('dragging'); box.querySelectorAll('.todo').forEach(r=>r.classList.remove('drop-before','drop-after'));});
+    row.addEventListener('dragover',e=>{ if(from===null) return; e.preventDefault(); e.stopPropagation(); const r=row.getBoundingClientRect(), after=e.clientY>r.top+r.height/2;
+      box.querySelectorAll('.todo').forEach(x=>x.classList.remove('drop-before','drop-after')); row.classList.add(after?'drop-after':'drop-before'); });
+    row.addEventListener('drop',e=>{ if(from===null) return; e.preventDefault(); e.stopPropagation(); const r=row.getBoundingClientRect(), after=e.clientY>r.top+r.height/2;
+      let to=+row.dataset.row+(after?1:0); if(from<to) to--; const f=from; from=null; if(to!==f) moveTodo(f,to); else renderTodos(); });
+  });
+  if(focusSel){ const el=box.querySelector(focusSel); if(el&&!el.disabled) el.focus(); else { const alt=box.querySelector('.mv:not(:disabled)'); if(alt) alt.focus(); } }
+}
+function moveTodo(from,to){
+  const ts=S.draft.todos; if(to<0||to>=ts.length||from===to) return;
+  const [t]=ts.splice(from,1); ts.splice(to,0,t);
+  todoChanged(true, to>from?`[data-down="${to}"]`:`[data-up="${to}"]`);
+}
+let todoTimer=null;
+async function todoChanged(isMove,focusSel){
+  S.rev=(S.rev||0)+1;
+  renderTodos(focusSel);
+  if(!S.draft.id){ S.dirty=true; renderFoot(); return; }
+  clearTimeout(todoTimer);
+  if(isMove){ // 連續調整順序時，停手 0.8 秒後才存檔
+    S.dirty=true; renderFoot();
+    todoTimer=setTimeout(()=>saveDraft(true),800); return;
+  }
+  await saveDraft(true); // 勾選、新增、刪除：直接存檔
 }
 function renderFoot(){
   const f=$('#dfoot'); if(!f) return;
@@ -741,8 +783,10 @@ function showConfirm(text,okLabel,ok){
   $('#cok').onclick=ok; $('#cno').onclick=renderFoot;
 }
 function numOrBlank(v){ if(v===''||v==null) return ''; const n=Number(String(v).replace(/,/g,'')); return isNaN(n)?String(v):n; }
-async function saveDraft(silent){
-  const d=S.draft; if(!d) return;
+// 存檔排隊依序送出，避免連續操作時舊的回應蓋掉新的變更
+function saveDraft(silent){ const run=()=>_saveDraft(silent); S.saveQ=(S.saveQ||Promise.resolve()).then(run,run); return S.saveQ; }
+async function _saveDraft(silent){
+  const d=S.draft; if(!d) return; const rev=S.rev||0;
   if(!String(d.name||'').trim()){ toast('請先填寫設備名稱。',true); const f=$('#f_name'); if(f) f.focus(); return; }
   const out={}; Object.keys(d).forEach(k=>{ if(!['files','folderId','updatedAt'].includes(k)) out[k]=d[k]; });
   ['qty','unitPrice','totalPrice'].forEach(k=>out[k]=numOrBlank(out[k]));
@@ -752,9 +796,9 @@ async function saveDraft(silent){
     const i=S.items.findIndex(x=>x.id===saved.id);
     if(i>=0) S.items[i]=saved; else S.items.push(saved);
     const wasNew=!d.id;
-    if(S.draft===d){ S.draft=Object.assign(clone(saved),{files:saved.files||d.files||[]}); S.dirty=false; }
+    if(S.draft===d){ d.id=saved.id; d.updatedAt=saved.updatedAt; if((S.rev||0)===rev) S.dirty=false; }
     S.saving=false;
-    if($('#drawer')){ if(wasNew){ const sc=$('#dbody').scrollTop; renderDrawer(); $('#dbody').scrollTop=sc; } else { renderFoot(); const sub=$('.d-head .sub'); if(sub) sub.innerHTML=`<span class="mono">${esc(saved.id)}</span>${chip(saved)}<span>更新於 ${esc(saved.updatedAt||'')}</span>`; } }
+    if($('#drawer')&&S.draft===d){ if(wasNew){ const sc=$('#dbody').scrollTop; renderDrawer(); $('#dbody').scrollTop=sc; } else { renderFoot(); const sub=$('.d-head .sub'); if(sub) sub.innerHTML=`<span class="mono">${esc(saved.id)}</span>${chip(saved)}<span>更新於 ${esc(saved.updatedAt||'')}</span>`; } }
     renderSummary(); renderView();
     if(!silent) toast('已儲存');
     return saved;
