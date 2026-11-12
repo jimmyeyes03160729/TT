@@ -192,6 +192,44 @@ mark{background:var(--warn-soft);color:inherit;border-radius:2px;padding:0 1px}
 .todo .mv:hover:not(:disabled){border-color:var(--line);color:var(--accent);background:var(--accent-soft)}
 .todo .mv:disabled{opacity:.25;cursor:default}
 .todo.dragging{opacity:.4}
+.todo .tb{flex:1;min-width:0;display:flex;flex-direction:column}
+.todo .tb .tx{flex:none}
+.tnote{font-size:13px;color:var(--warn);overflow-wrap:anywhere;cursor:pointer}
+.todo.done .tnote{color:var(--muted)}
+.todo .ed{border:0;background:transparent;color:var(--muted);cursor:pointer;height:28px;padding:0 6px;border-radius:6px;font-size:12px;white-space:nowrap;flex:none}
+.todo .ed:hover,.todo .ed.has{color:var(--warn)}
+.todo .ed:hover{background:var(--warn-soft)}
+.tnote-edit{display:flex;gap:8px;padding:0 0 10px 30px;flex-wrap:wrap}
+.tnote-edit .inp{flex:1 1 200px}
+.c-flag{font-size:12px;color:var(--warn);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* vendor contacts */
+.vbox{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line);display:flex;flex-direction:column;gap:10px}
+.vbox-h{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;color:var(--muted);letter-spacing:.04em}
+.contacts{display:flex;flex-direction:column;gap:8px}
+.contact{display:flex;flex-direction:column;gap:3px;padding:10px 12px;border-radius:var(--r);background:var(--sunk)}
+.contact .who{font-weight:500}
+.contact .who span{font-weight:400;color:var(--muted);font-size:12px;margin-left:6px}
+.cl{display:flex;gap:8px;align-items:center;font-size:13px;min-width:0;flex-wrap:wrap}
+.cl em{font-style:normal;color:var(--muted);font-size:12px;min-width:56px}
+.cl a,.cl span{overflow-wrap:anywhere}
+.cp{border:1px solid var(--line);background:var(--surface);border-radius:4px;font-size:11px;padding:1px 6px;cursor:pointer;color:var(--muted)}
+.cp:hover{color:var(--accent);border-color:var(--accent)}
+.vnote{font-size:13px;white-space:pre-wrap;color:var(--muted)}
+.cedit{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:12px;border:1px solid var(--line);border-radius:var(--r);background:var(--sunk);position:relative}
+.cedit .rm{position:absolute;top:6px;right:6px}
+.cedit .full{grid-column:span 2}
+.vactions{display:flex;gap:8px;flex-wrap:wrap}
+.vgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
+.vcard{display:flex;flex-direction:column;gap:10px;padding:14px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);min-width:0}
+.vcard-h{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.vcard-h b{font-size:15px;overflow-wrap:anywhere}
+.vcard-h small{color:var(--muted);font-size:12px;white-space:nowrap}
+.vitems{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.vlist{display:flex;flex-direction:column}
+.vlist button{display:flex;justify-content:space-between;gap:10px;text-align:left;border:0;border-top:1px solid var(--line);background:transparent;padding:9px 2px;cursor:pointer}
+.vlist button:first-child{border-top:0}
+.vlist button:hover b{color:var(--accent)}
+@media (max-width:720px){ .vgrid{grid-template-columns:1fr} .cedit{grid-template-columns:1fr} .cedit .full{grid-column:auto} .tnote-edit{padding-left:0} }
 .todo.drop-before{box-shadow:inset 0 2px 0 var(--accent)}
 .todo.drop-after{box-shadow:inset 0 -2px 0 var(--accent)}
 @media (max-width:720px){ .todo .grip{display:none} .todo .mv{width:34px;height:34px;font-size:15px} }
@@ -330,7 +368,7 @@ function termScore(t,nm,all){
 }
 function searchTerms(q){ return String(q||'').split(/[\s,，、]+/).map(norm).filter(Boolean); }
 function scoreItem(it,terms){
-  const nm=norm([it.name,it.nameEn].join(' ')), all=norm([it.id,it.name,it.nameEn,it.spec,it.vendor,it.area,it.dept,it.tagNo,it.owner,it.note,it.source,it.origin].join(' '));
+  const nm=norm([it.name,it.nameEn].join(' ')), all=norm([it.id,it.name,it.nameEn,it.spec,it.vendor,it.area,it.dept,it.tagNo,it.owner,it.note,it.source,it.origin,(it.todos||[]).map(t=>t.note||'').join(' '),vendorText(it.vendor)].join(' '));
   let sum=0; for(const t of terms){ const v=termScore(t,nm,all); if(!v) return 0; sum+=v; } return sum/terms.length;
 }
 function hl(text,q){
@@ -385,7 +423,11 @@ const Demo={
     this.cred={u,p:this.hash(p)}; LS.set('eqt_demo_cred',JSON.stringify(this.cred)); return 'demo'; },
   login(u,p){ const c=this.getCred(); if(!c) throw new Error('尚未建立帳號。'); if(c.u!==String(u).trim()||c.p!==this.hash(String(p))) throw new Error('帳號或密碼錯誤。'); return 'demo'; },
   logout(){return true},
-  listItems(){return{items:clone(this.items()),meta:{demo:true}}},
+  vend(){ if(this.vmem) return this.vmem; let v=null; try{v=JSON.parse(localStorage.getItem('eqt_demo_vendors')||'null')}catch(e){} this.vmem=v||[]; return this.vmem; },
+  listItems(){return{items:clone(this.items()),vendors:clone(this.vend()),meta:{demo:true}}},
+  saveVendor(t,v){ const name=String(v.name||'').trim(); if(!name) throw new Error('請先填寫設備廠商名稱。'); const all=this.vend(); const d=new Date();
+    const o={name,contacts:(v.contacts||[]).filter(c=>c.name||c.role||c.phone||c.chat||c.email),note:v.note||'',updatedAt:ymd(d)+' '+pad(d.getHours())+':'+pad(d.getMinutes())};
+    const i=all.findIndex(x=>x.name===name); if(i>=0) all[i]=o; else all.push(o); LS.set('eqt_demo_vendors',JSON.stringify(all)); return clone(o); },
   saveItem(t,it){ const all=this.items(); let cur=it.id&&all.find(x=>x.id===it.id);
     if(!cur){ const max=all.reduce((m,x)=>Math.max(m,+String(x.id).replace(/\D/g,'')||0),0); cur={id:'E'+String(max+1).padStart(3,'0'),files:[],folderId:''}; all.push(cur); }
     Object.keys(it).forEach(k=>{if(!['id','files','folderId'].includes(k)) cur[k]=it[k]});
@@ -398,7 +440,7 @@ const Demo={
 };
 
 /* ---------- state ---------- */
-const S={token:LS.get(TK),items:[],meta:{},view:(location.hash==='#gantt'||LS.get('eqt_view')==='gantt')?'gantt':'list',
+const S={token:LS.get(TK),items:[],vendors:{},meta:{},noteEdit:null,vEdit:null,view:location.hash==='#gantt'?'gantt':location.hash==='#vendors'?'vendor':(['gantt','vendor'].includes(LS.get('eqt_view'))?LS.get('eqt_view'):'list'),
   f:{q:'',dept:'',status:'',source:''},sort:'id',zoom:LS.get('eqt_zoom')||'week',draft:null,dirty:false,uploading:[],arm:null};
 
 const app=$('#app');
@@ -441,7 +483,7 @@ function renderLogin(init){
 }
 async function loadData(){
   app.innerHTML='<div class="loading"><div><div class="spin"></div>載入設備清單…<br><small>第一次啟動會建立試算表與雲端資料夾，約需 10–30 秒</small></div></div>';
-  try{ const r=await authed('listItems'); S.items=r.items||[]; S.meta=r.meta||{}; renderShell(); }
+  try{ const r=await authed('listItems'); S.items=r.items||[]; S.meta=r.meta||{}; S.vendors={}; (r.vendors||[]).forEach(v=>S.vendors[v.name]=v); renderShell(); }
   catch(e){ if(S.token) app.innerHTML=`<div class="loading"><div>載入失敗：${esc(msg(e))}<br><br><button class="btn" id="rt">重試</button></div></div>`, $('#rt')&&($('#rt').onclick=loadData); }
 }
 async function doLogout(){ try{await call('logout',S.token)}catch(e){} S.token=null; LS.del(TK); boot(); }
@@ -467,7 +509,7 @@ function renderShell(){
       <select class="inp" id="fs" aria-label="狀態"><option value="">全部狀態</option>${[['todo','未開始'],['doing','進行中'],['done','已完成'],['overdue','逾期'],['soon','30 天內交機'],['tune','有調機日期']].map(([v,l])=>`<option value="${v}"${S.f.status===v?' selected':''}>${l}</option>`).join('')}</select>
       <select class="inp" id="fo" aria-label="採購來源"><option value="">全部來源</option>${SOURCES.map(d=>`<option${S.f.source===d?' selected':''}>${d}</option>`).join('')}</select>
       <select class="inp" id="so" aria-label="排序">${[['id','依編號'],['eta','依預計交機日'],['tune','依調機日'],['prog','依進度（少→多）'],['dept','依部門']].map(([v,l])=>`<option value="${v}"${S.sort===v?' selected':''}>${l}</option>`).join('')}</select>
-      <div class="seg" role="tablist"><button id="vList" class="${S.view==='list'?'on':''}">清單</button><button id="vGantt" class="${S.view==='gantt'?'on':''}">甘特圖</button></div>
+      <div class="seg" role="tablist"><button id="vList" class="${S.view==='list'?'on':''}">清單</button><button id="vGantt" class="${S.view==='gantt'?'on':''}">甘特圖</button><button id="vVendor" class="${S.view==='vendor'?'on':''}">廠商</button></div>
       <span class="count" id="count"></span>
     </section>
     <section id="view"></section>
@@ -480,11 +522,11 @@ function renderShell(){
   $('#fs').onchange=e=>{S.f.status=e.target.value;renderSummary();renderView()};
   $('#fo').onchange=e=>{S.f.source=e.target.value;renderView()};
   $('#so').onchange=e=>{S.sort=e.target.value;renderView()};
-  $('#vList').onclick=()=>setView('list'); $('#vGantt').onclick=()=>setView('gantt');
+  $('#vList').onclick=()=>setView('list'); $('#vGantt').onclick=()=>setView('gantt'); $('#vVendor').onclick=()=>setView('vendor');
   renderSummary(); renderView();
 }
-function setView(v){ S.view=v; LS.set('eqt_view',v); try{history.replaceState(null,'',v==='gantt'?'#gantt':location.pathname+location.search)}catch(e){}
-  $('#vList').className=v==='list'?'on':''; $('#vGantt').className=v==='gantt'?'on':''; renderView(); }
+function setView(v){ S.view=v; LS.set('eqt_view',v); try{history.replaceState(null,'',v==='gantt'?'#gantt':v==='vendor'?'#vendors':location.pathname+location.search)}catch(e){}
+  $('#vList').className=v==='list'?'on':''; $('#vGantt').className=v==='gantt'?'on':''; $('#vVendor').className=v==='vendor'?'on':''; renderView(); }
 function deptList(){ const s=new Set(DEPTS); S.items.forEach(i=>i.dept&&s.add(i.dept)); return [...s]; }
 
 function renderSummary(){
@@ -528,7 +570,7 @@ function filtered(){
   return r.sort((a,b)=>terms.length&&sc.get(b.id)!==sc.get(a.id)?sc.get(b.id)-sc.get(a.id):key(a)<key(b)?-1:key(a)>key(b)?1:0);
 }
 
-function renderView(){ const r=filtered(); $('#count').textContent=`顯示 ${r.length} / ${S.items.length} 項${S.f.q.trim()&&r.length?'，依相符程度排序':''}`; S.view==='gantt'?renderGantt(r):renderList(r); }
+function renderView(){ if(S.view==='vendor') return renderVendors(); const r=filtered(); $('#count').textContent=`顯示 ${r.length} / ${S.items.length} 項${S.f.q.trim()&&r.length?'，依相符程度排序':''}`; S.view==='gantt'?renderGantt(r):renderList(r); }
 
 function etaCell(it){
   if(it.arrivalDate) return `<span class="t-ok">已交機 ${fmtD(it.arrivalDate)}</span>`;
@@ -552,7 +594,7 @@ function renderList(r){
       return `<div class="row" role="row" tabindex="0" data-id="${esc(it.id)}">
         <span class="c-id mono">${esc(it.id)}</span>
         <span class="c-st">${chip(it)}</span>
-        <span class="c-name"><b>${hl(it.name,S.f.q)}</b><small>${hl(it.spec||it.nameEn||'',S.f.q)}</small></span>
+        <span class="c-name"><b>${hl(it.name,S.f.q)}</b><small>${hl(it.spec||it.nameEn||'',S.f.q)}</small>${(()=>{const f=(it.todos||[]).find(t=>!t.done&&t.note);return f?`<span class="c-flag" title="${esc(f.t+'：'+f.note)}">⚠ ${esc(f.t)}：${hl(f.note,S.f.q)}</span>`:''})()}</span>
         <span class="c-dept"><span>${esc(it.dept)}</span><span class="c-sub">${esc(it.area)}</span></span>
         <span class="c-vendor"><span>${esc(it.vendor||'—')}</span><span class="c-sub">${esc(it.source)}</span></span>
         <span class="c-qty mono">${esc(it.qty)} <small class="muted">${esc(it.unit)}</small></span>
@@ -656,7 +698,7 @@ function openItem(id){
   document.body.append(sc,d); document.body.style.overflow='hidden';
   renderDrawer(); setTimeout(()=>{const f=$('#f_name'); if(f&&!id) f.focus();},50);
 }
-function closeDrawer(force){ const d=$('#drawer'),s=$('#scrim'); if(d)d.remove(); if(s)s.remove(); document.body.style.overflow=''; if(!force){S.draft=null;} }
+function closeDrawer(force){ const d=$('#drawer'),s=$('#scrim'); if(d)d.remove(); if(s)s.remove(); document.body.style.overflow=''; S.vEdit=null; S.noteEdit=null; if(!force){S.draft=null;} }
 function tryClose(){ if(S.dirty){ showConfirm('有尚未儲存的變更，要放棄嗎？','放棄變更',()=>{S.dirty=false;closeDrawer()}); return; } closeDrawer(); }
 function onKey(e){ if(e.key==='Escape'&&$('#drawer')) tryClose(); }
 document.addEventListener('keydown',onKey);
@@ -684,7 +726,7 @@ function renderDrawer(){
        <div class="todos" id="todos"></div>
        <form class="addrow" id="tadd"><input class="inp" id="tnew" placeholder="新增待辦，例如：確認電壓 380V"><button class="btn" type="submit">新增</button></form>
      </section>
-     ${FORM.map(s=>`<section class="sec"><h3>${s.sec}</h3><div class="fgrid">${s.f.map(fieldHTML).join('')}</div></section>`).join('')}
+     ${FORM.map(s=>`<section class="sec"><h3>${s.sec}</h3><div class="fgrid">${s.f.map(fieldHTML).join('')}</div>${s.sec==='廠商與金額'?'<div class="vbox" id="vbox"></div>':''}</section>`).join('')}
      <section class="sec"><h3>附件 / 文件 ${fu?`<a href="${esc(fu)}" target="_blank" rel="noopener" style="font-size:13px;letter-spacing:0">開啟雲端資料夾</a>`:''}</h3>
        <label class="drop" id="drop" for="filepick" tabindex="0"><b>點這裡選擇檔案</b><span>或把檔案拖進來 · 報價單、合約、規格書、照片都可以 · 單檔 25 MB 以內</span>
          <span style="font-size:12px">會存到雲端硬碟「泰國建廠設備文件 / ${esc(it.dept||'未分類')} / ${esc(it.name||'設備名稱')}」</span></label>
@@ -697,7 +739,9 @@ function renderDrawer(){
   // fields
   d.querySelectorAll('[data-k]').forEach(el=>{ el.addEventListener('input',()=>onField(el)); el.addEventListener('change',()=>onField(el)); });
   // todos
-  renderTodos();
+  S.noteEdit=null; S.vEdit=null; renderTodos();
+  renderVendorBox($('#vbox'),()=>S.draft.vendor);
+  const vf=$('#f_vendor'); if(vf){ let tm; vf.addEventListener('input',()=>{clearTimeout(tm); tm=setTimeout(()=>{ if(!S.vEdit) renderVendorBox($('#vbox'),()=>S.draft.vendor); },400);}); }
   $('#tadd').onsubmit=e=>{e.preventDefault(); const v=$('#tnew').value.trim(); if(!v) return; S.draft.todos.push({t:v,done:false,at:''}); todoChanged(); setTimeout(()=>$('#tnew')&&$('#tnew').focus(),30);};
   // drop zone
   const dz=$('#drop');
@@ -725,13 +769,26 @@ function renderTodos(focusSel){
   const p=prog(S.draft); const c=$('#tcount'); if(c) c.textContent=p.d+'/'+p.n;
   box.innerHTML=ts.map((t,i)=>`<div class="todo ${t.done?'done':''}" data-row="${i}" draggable="true">
       <span class="grip" title="拖曳調整順序" aria-hidden="true">⋮⋮</span>
-      <input type="checkbox" id="td_${i}" data-i="${i}" ${t.done?'checked':''}><label class="tx" for="td_${i}">${esc(t.t)}</label>
+      <input type="checkbox" id="td_${i}" data-i="${i}" ${t.done?'checked':''}>
+      <div class="tb"><label class="tx" for="td_${i}">${esc(t.t)}</label>${t.note?`<span class="tnote" data-note="${i}">${esc(t.note)}</span>`:''}</div>
       ${t.at?`<span class="at">${esc(t.at.slice(5).replace('-','/'))}</span>`:''}
+      <button class="ed ${t.note?'has':''}" data-note="${i}" aria-label="${t.note?'修改':'新增'}備註：${esc(t.t)}">${t.note?'改備註':'＋備註'}</button>
       <button class="mv" data-up="${i}" ${i===0?'disabled':''} aria-label="往上移：${esc(t.t)}">▲</button>
       <button class="mv" data-down="${i}" ${i===ts.length-1?'disabled':''} aria-label="往下移：${esc(t.t)}">▼</button>
-      <button class="x" data-del="${i}" aria-label="刪除待辦 ${esc(t.t)}">×</button></div>`).join('')||'<div class="muted">還沒有待辦事項</div>';
+      <button class="x" data-del="${i}" aria-label="刪除待辦 ${esc(t.t)}">×</button></div>${S.noteEdit===i?`
+      <form class="tnote-edit" id="tnf"><input class="inp" id="tni" value="${esc(t.note||'')}" placeholder="例如：廠商設計圖還未出" aria-label="${esc(t.t)} 的備註">
+        <button class="btn sm primary" type="submit">儲存</button>${t.note?'<button class="btn sm danger" type="button" id="tnclr">清除</button>':''}<button class="btn sm" type="button" id="tncancel">取消</button></form>`:''}`).join('')||'<div class="muted">還沒有待辦事項</div>';
+  box.querySelectorAll('[data-note]').forEach(b=>b.onclick=()=>{ S.noteEdit=+b.dataset.note; renderTodos(); const x=$('#tni'); if(x){x.focus(); x.select();} });
+  const nf=$('#tnf');
+  if(nf){
+    const done=v=>{ const t=S.draft.todos[S.noteEdit]; S.noteEdit=null; if(!t) return renderTodos(); if(v===null){ renderTodos(); return; } t.note=v.trim(); todoChanged(); };
+    nf.onsubmit=e=>{e.preventDefault(); done($('#tni').value);};
+    $('#tncancel').onclick=()=>done(null);
+    const clr=$('#tnclr'); if(clr) clr.onclick=()=>done('');
+    $('#tni').onkeydown=e=>{ if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); done(null); } };
+  }
   box.querySelectorAll('input[type=checkbox]').forEach(cb=>cb.onchange=()=>{const t=S.draft.todos[+cb.dataset.i]; t.done=cb.checked; t.at=cb.checked?today():''; todoChanged();});
-  box.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{S.draft.todos.splice(+b.dataset.del,1); todoChanged();});
+  box.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{S.noteEdit=null; S.draft.todos.splice(+b.dataset.del,1); todoChanged();});
   box.querySelectorAll('[data-up]').forEach(b=>b.onclick=()=>moveTodo(+b.dataset.up,+b.dataset.up-1));
   box.querySelectorAll('[data-down]').forEach(b=>b.onclick=()=>moveTodo(+b.dataset.down,+b.dataset.down+1));
   // 電腦版：拖曳排序
@@ -748,7 +805,7 @@ function renderTodos(focusSel){
 }
 function moveTodo(from,to){
   const ts=S.draft.todos; if(to<0||to>=ts.length||from===to) return;
-  const [t]=ts.splice(from,1); ts.splice(to,0,t);
+  S.noteEdit=null; const [t]=ts.splice(from,1); ts.splice(to,0,t);
   todoChanged(true, to>from?`[data-down="${to}"]`:`[data-up="${to}"]`);
 }
 let todoTimer=null;
@@ -803,6 +860,97 @@ async function _saveDraft(silent){
     if(!silent) toast('已儲存');
     return saved;
   }catch(e){ S.saving=false; renderFoot(); toast('儲存失敗：'+msg(e),true); }
+}
+
+/* ---------- 廠商通訊錄 ---------- */
+const vkey=n=>String(n||'').trim();
+function vendorText(name){ const v=S.vendors[vkey(name)]; if(!v) return ''; return (v.contacts||[]).map(c=>[c.name,c.role,c.phone,c.chat,c.email].join(' ')).join(' ')+' '+(v.note||''); }
+async function copyText(t){
+  try{ await navigator.clipboard.writeText(t); toast('已複製'); }
+  catch(e){ const a=document.createElement('textarea'); a.value=t; a.style.position='fixed'; a.style.opacity='0'; document.body.appendChild(a); a.select(); let ok=false; try{ok=document.execCommand('copy')}catch(x){} a.remove(); toast(ok?'已複製':'無法自動複製，請長按文字手動複製', !ok); }
+}
+function contactsHTML(v){
+  const cs=(v&&v.contacts)||[];
+  if(!cs.length&&!(v&&v.note)) return '<div class="muted" style="font-size:13px">還沒有聯絡資訊</div>';
+  return `<div class="contacts">${cs.map(c=>`<div class="contact">
+      ${c.name||c.role?`<div class="who">${esc(c.name||'（未填姓名）')}${c.role?`<span>${esc(c.role)}</span>`:''}</div>`:''}
+      ${c.phone?`<div class="cl"><em>電話</em><a href="tel:${esc(c.phone.replace(/[^\d+]/g,''))}">${esc(c.phone)}</a><button class="cp" data-copy="${esc(c.phone)}">複製</button></div>`:''}
+      ${c.chat?`<div class="cl"><em>微信/群組</em><span>${esc(c.chat)}</span><button class="cp" data-copy="${esc(c.chat)}">複製</button></div>`:''}
+      ${c.email?`<div class="cl"><em>Email</em><a href="mailto:${esc(c.email)}">${esc(c.email)}</a><button class="cp" data-copy="${esc(c.email)}">複製</button></div>`:''}
+    </div>`).join('')}</div>${v&&v.note?`<div class="vnote">${esc(v.note)}</div>`:''}`;
+}
+function bindCopy(root){ root.querySelectorAll('[data-copy]').forEach(b=>b.onclick=e=>{e.preventDefault(); copyText(b.dataset.copy);}); }
+// 顯示／編輯某家廠商的聯絡資訊；getName 回傳目前的廠商名稱
+function renderVendorBox(box,getName,startEdit){
+  if(!box) return; const name=vkey(getName()); const v=S.vendors[name];
+  if(!name){ box.innerHTML='<div class="vbox-h">廠商聯絡資訊</div><div class="muted" style="font-size:13px">先填寫「設備廠商 / 品牌」，就能加聯絡人。</div>'; return; }
+  if(startEdit&&!S.vEdit) S.vEdit={name,contacts:clone((v&&v.contacts)||[]),note:(v&&v.note)||''};
+  if(S.vEdit&&S.vEdit.name===name){
+    const e=S.vEdit; if(!e.contacts.length) e.contacts.push({name:'',role:'',phone:'',chat:'',email:''});
+    box.innerHTML=`<div class="vbox-h">編輯「${esc(name)}」的聯絡資訊<span>同一家廠商的所有設備共用</span></div>
+      ${e.contacts.map((c,i)=>`<div class="cedit">
+        <div><label class="lab" for="vc_n${i}">聯絡人</label><input class="inp" id="vc_n${i}" data-ci="${i}" data-cf="name" value="${esc(c.name)}" placeholder="例如：王經理"></div>
+        <div><label class="lab" for="vc_r${i}">職稱 / 負責</label><input class="inp" id="vc_r${i}" data-ci="${i}" data-cf="role" value="${esc(c.role)}" placeholder="例如：業務、售後"></div>
+        <div><label class="lab" for="vc_p${i}">電話</label><input class="inp" id="vc_p${i}" data-ci="${i}" data-cf="phone" value="${esc(c.phone)}" inputmode="tel" placeholder="+86 138…"></div>
+        <div><label class="lab" for="vc_c${i}">微信 / LINE / 群組</label><input class="inp" id="vc_c${i}" data-ci="${i}" data-cf="chat" value="${esc(c.chat)}" placeholder="例如：微信群「泰國新廠-砺宏」"></div>
+        <div class="full"><label class="lab" for="vc_e${i}">Email</label><input class="inp" id="vc_e${i}" data-ci="${i}" data-cf="email" value="${esc(c.email)}" inputmode="email"></div>
+        ${e.contacts.length>1?`<button class="btn sm ghost rm" data-crm="${i}" aria-label="移除這位聯絡人">移除</button>`:''}
+      </div>`).join('')}
+      <button class="btn sm" id="vcadd" type="button">＋ 再加一位聯絡人</button>
+      <div><label class="lab" for="vc_note">廠商備註（地址、付款條件、交貨方式…）</label><textarea class="inp" id="vc_note">${esc(e.note)}</textarea></div>
+      <div class="vactions"><button class="btn primary" id="vcsave" type="button">儲存聯絡資訊</button><button class="btn" id="vccancel" type="button">取消</button></div>`;
+    box.querySelectorAll('[data-ci]').forEach(inp=>inp.oninput=()=>{ e.contacts[+inp.dataset.ci][inp.dataset.cf]=inp.value; });
+    $('#vc_note').oninput=ev=>{ e.note=ev.target.value; };
+    box.querySelectorAll('[data-crm]').forEach(b=>b.onclick=()=>{ e.contacts.splice(+b.dataset.crm,1); renderVendorBox(box,getName); });
+    $('#vcadd').onclick=()=>{ e.contacts.push({name:'',role:'',phone:'',chat:'',email:''}); renderVendorBox(box,getName); const l=box.querySelectorAll('[data-cf="name"]'); l[l.length-1].focus(); };
+    $('#vccancel').onclick=()=>{ S.vEdit=null; renderVendorBox(box,getName); };
+    $('#vcsave').onclick=async()=>{
+      const b=$('#vcsave'); b.disabled=true; b.textContent='儲存中…';
+      try{ const saved=await authed('saveVendor',{name,contacts:e.contacts,note:e.note}); S.vendors[saved.name]=saved; S.vEdit=null; renderVendorBox(box,getName); toast('聯絡資訊已儲存'); if(S.view==='vendor') renderView(); }
+      catch(err){ toast('儲存失敗：'+msg(err),true); b.disabled=false; b.textContent='儲存聯絡資訊'; }
+    };
+    return;
+  }
+  box.innerHTML=`<div class="vbox-h">「${esc(name)}」聯絡資訊<button class="btn sm" id="vcedit" type="button">${v&&(v.contacts||[]).length?'編輯':'＋ 新增聯絡人'}</button></div>${contactsHTML(v)}`;
+  bindCopy(box);
+  $('#vcedit').onclick=()=>{ S.vEdit=null; renderVendorBox(box,getName,true); const f=box.querySelector('[data-cf="name"]'); if(f) f.focus(); };
+}
+function vendorGroups(){
+  const base=S.items.filter(x=>{ if(S.f.dept&&(x.dept||'未分類')!==S.f.dept) return false; if(S.f.source&&x.source!==S.f.source) return false; return true; });
+  const g={}; base.forEach(it=>{ const k=vkey(it.vendor); if(!k) return; (g[k]=g[k]||[]).push(it); });
+  if(!S.f.dept&&!S.f.source) Object.keys(S.vendors).forEach(k=>{ g[k]=g[k]||[]; });
+  return g;
+}
+function renderVendors(){
+  const v=$('#view'), g=vendorGroups(), terms=searchTerms(S.f.q);
+  let names=Object.keys(g);
+  const sc={};
+  if(terms.length){ names=names.filter(n=>{ const nm=norm(n), all=norm(n+' '+vendorText(n)+' '+g[n].map(i=>i.name+' '+i.spec).join(' ')); let s=0; for(const t of terms){ const x=termScore(t,nm,all); if(!x) return false; s+=x; } sc[n]=s; return true; }); }
+  names.sort((a,b)=>terms.length&&sc[b]!==sc[a]?sc[b]-sc[a]:((S.vendors[b]?1:0)-(S.vendors[a]?1:0))||g[b].length-g[a].length||a.localeCompare(b,'zh-Hant'));
+  const filled=names.filter(n=>S.vendors[n]&&(S.vendors[n].contacts||[]).length).length;
+  $('#count').textContent=`${names.length} 家廠商，${filled} 家已填聯絡資訊`;
+  if(!names.length){ v.innerHTML='<div class="list"><div class="empty">沒有符合條件的廠商。</div></div>'; return; }
+  v.innerHTML=`<div class="vgrid">${names.map(n=>{const its=g[n], vd=S.vendors[n];
+    return `<article class="vcard"><div class="vcard-h"><div><b>${hl(n,S.f.q)}</b><br><small>${its.length} 項設備</small></div><button class="btn sm" data-vopen="${esc(n)}">${vd&&(vd.contacts||[]).length?'查看 / 編輯':'＋ 聯絡人'}</button></div>
+      ${vd?contactsHTML(vd):''}
+      ${its.length?`<div class="vitems">${esc(its.map(i=>i.name).filter((x,i,a)=>a.indexOf(x)===i).join('、'))}</div>`:''}</article>`}).join('')}</div>`;
+  bindCopy(v);
+  v.querySelectorAll('[data-vopen]').forEach(b=>b.onclick=()=>openVendor(b.dataset.vopen));
+}
+function openVendor(name){
+  closeDrawer(true); S.draft=null; S.dirty=false; S.vEdit=null;
+  const sc=document.createElement('div'); sc.className='scrim'; sc.id='scrim'; sc.onclick=()=>closeDrawer();
+  const d=document.createElement('aside'); d.className='drawer'; d.id='drawer'; d.setAttribute('role','dialog'); d.setAttribute('aria-modal','true');
+  document.body.append(sc,d); document.body.style.overflow='hidden';
+  const its=S.items.filter(i=>vkey(i.vendor)===name);
+  d.innerHTML=`<div class="d-head"><div class="t"><h2>${esc(name)}</h2><div class="sub">廠商 · ${its.length} 項設備</div></div><button class="btn ghost" id="dclose" aria-label="關閉">✕</button></div>
+    <div class="d-body" id="dbody"><section class="sec"><div class="vbox" id="vbox2" style="margin:0;padding:0;border:0"></div></section>
+      ${its.length?`<section class="sec"><h3>這家廠商的設備</h3><div class="vlist">${its.map(i=>`<button data-oi="${esc(i.id)}"><span><b style="font-weight:500">${esc(i.name)}</b> <span class="muted">${esc(i.spec||'')}</span></span><span>${chip(i)}</span></button>`).join('')}</div></section>`:''}
+    </div><div class="d-foot"><span class="sp"></span><button class="btn" id="dcancel">關閉</button></div>`;
+  $('#dclose').onclick=()=>closeDrawer(); $('#dcancel').onclick=()=>closeDrawer();
+  const has=S.vendors[name]&&(S.vendors[name].contacts||[]).length;
+  renderVendorBox($('#vbox2'),()=>name,!has);
+  d.querySelectorAll('[data-oi]').forEach(b=>b.onclick=()=>openItem(b.dataset.oi));
 }
 
 /* ---------- files ---------- */

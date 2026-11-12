@@ -28,7 +28,7 @@ const COLS = [
 const EDITABLE = COLS.map(c => c[0]).filter(k => ['id', 'progress', 'files', 'folderId', 'updatedAt'].indexOf(k) < 0);
 
 /* ---------- API 入口（網頁放在 GitHub Pages，透過這裡讀寫資料） ---------- */
-const API = { getAuthState, setupAccount, login, logout, listItems, saveItem, deleteItem, uploadFile, deleteFile, exportGantt };
+const API = { getAuthState, setupAccount, login, logout, listItems, saveItem, deleteItem, uploadFile, deleteFile, exportGantt, saveVendor };
 
 function doPost(e) {
   let out;
@@ -224,11 +224,63 @@ function listItems(token) {
   const db = readAll_();
   return {
     items: db.items.map(clean_),
+    vendors: readVendors_().list,
     meta: {
       sheetUrl: SpreadsheetApp.openById(P_().getProperty('SS_ID')).getUrl(),
       rootUrl: root_().getUrl()
     }
   };
+}
+
+/* ---------- 廠商通訊錄（工作表「廠商聯絡」，同一家廠商所有設備共用） ---------- */
+const VENDOR_SHEET = '廠商聯絡';
+const VENDOR_HEAD = ['廠商', '聯絡窗口(JSON)', '聯絡窗口（方便閱讀）', '備註', '最後更新'];
+
+function vendorSheet_() {
+  sheet_(); // 確保試算表已建立
+  const ss = SpreadsheetApp.openById(P_().getProperty('SS_ID'));
+  let sh = ss.getSheetByName(VENDOR_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(VENDOR_SHEET);
+    sh.getRange(1, 1, 500, VENDOR_HEAD.length).setNumberFormat('@');
+    sh.getRange(1, 1, 1, VENDOR_HEAD.length).setValues([VENDOR_HEAD]).setFontWeight('bold').setBackground('#E3EDF7');
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function readVendors_() {
+  const sh = vendorSheet_();
+  const last = sh.getLastRow();
+  const vals = last > 1 ? sh.getRange(2, 1, last - 1, VENDOR_HEAD.length).getValues() : [];
+  const list = [];
+  vals.forEach((r, i) => {
+    const name = cell_(r[0]).trim(); if (!name) return;
+    let contacts = []; try { contacts = r[1] ? JSON.parse(r[1]) : []; } catch (e) {}
+    list.push({ _row: i + 2, name: name, contacts: contacts, note: cell_(r[3]), updatedAt: cell_(r[4]) });
+  });
+  return { sh: sh, list: list.map(v => ({ name: v.name, contacts: v.contacts, note: v.note, updatedAt: v.updatedAt })), rows: list };
+}
+
+function saveVendor(token, v) {
+  check_(token);
+  const name = String(v && v.name || '').trim();
+  if (!name) throw new Error('請先填寫設備廠商名稱。');
+  const lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    const db = readVendors_();
+    const contacts = (v.contacts || []).map(c => ({
+      name: String(c.name || '').trim(), role: String(c.role || '').trim(), phone: String(c.phone || '').trim(),
+      chat: String(c.chat || '').trim(), email: String(c.email || '').trim()
+    })).filter(c => c.name || c.role || c.phone || c.chat || c.email);
+    const readable = contacts.map(c => [c.name, c.role, c.phone, c.chat, c.email].filter(Boolean).join(' / ')).join('\n');
+    const now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm');
+    const row = [name, JSON.stringify(contacts), readable, String(v.note || ''), now];
+    const hit = db.rows.find(x => x.name === name);
+    const r = hit ? hit._row : db.sh.getLastRow() + 1;
+    db.sh.getRange(r, 1, 1, row.length).setNumberFormat('@').setValues([row]);
+    return { name: name, contacts: contacts, note: String(v.note || ''), updatedAt: now };
+  } finally { lock.releaseLock(); }
 }
 
 function saveItem(token, input) {
@@ -325,7 +377,7 @@ function exportGantt(token, ids) {
   for (let w = new Date(start); w <= max; w.setDate(w.getDate() + 7)) weeks.push(new Date(w));
   if (weeks.length > 150) weeks.length = 150;
 
-  const head = ['編號', '部門', '製程/站別', '設備名稱', '規格/型號', '設備廠商', '數量', '下單日', '預計交機日', '實際交機日', '調機開始日', '調機完成日', '待辦進度', '狀態'];
+  const head = ['編號', '部門', '製程/站別', '設備名稱', '規格/型號', '設備廠商', '數量', '下單日', '預計交機日', '實際交機日', '調機開始日', '調機完成日', '待辦進度', '狀態', '待辦備註'];
   const F = head.length;
   const C = { po: '#9DBBDD', ship: '#1C5D99', arr: '#1F7A4D', tune: '#E3A34A', none: '#FFFFFF', today: '#FBE4E1' };
   const today = d_(ymd_(new Date()));
@@ -335,7 +387,8 @@ function exportGantt(token, ids) {
   items.forEach(x => {
     const t = x.todos || [], done = t.filter(y => y.done).length;
     const st = t.length && done === t.length ? '已完成' : (done || x.poDate || x.arrivalDate) ? '進行中' : '未開始';
-    values.push([x.id, x.dept, x.area, x.name, x.spec, x.vendor, x.qty, x.poDate, x.eta, x.arrivalDate, x.tuneStart, x.tuneEnd, done + '/' + t.length, st]
+    const tnote = t.filter(y => y.note).map(y => (y.done ? '✓' : '') + y.t + '：' + y.note).join('；');
+    values.push([x.id, x.dept, x.area, x.name, x.spec, x.vendor, x.qty, x.poDate, x.eta, x.arrivalDate, x.tuneStart, x.tuneEnd, done + '/' + t.length, st, tnote]
       .map(v => v === undefined || v === null ? '' : v).concat(weeks.map(() => '')));
     const po = d_(x.poDate), eta = d_(x.eta), arr = d_(x.arrivalDate), ts = d_(x.tuneStart), te = d_(x.tuneEnd) || ts;
     const shipEnd = arr || eta;
