@@ -636,6 +636,7 @@ function importUtilities() {
  */
 function convertToTraditional() {
   if (!P_().getProperty('SS_ID')) { Logger.log('試算表還沒建立，第一次打開網頁時會直接使用繁體資料。'); return; }
+  if (typeof SEED_ITEMS === 'undefined') { Logger.log('不需要執行：找不到 Seed.gs，資料已經是繁體就不用再轉。要匯入水電氣請改執行 importUtilities。'); return; }
   const FIELDS = ['dept', 'area', 'name', 'nameEn', 'spec', 'vendor', 'unit', 'leadTime', 'note', 'utilities', 'size', 'origin', 'source', 'boi'];
   const seed = {}; SEED_ITEMS.forEach(x => { seed[x.id] = x; });
   const lock = LockService.getScriptLock(); lock.waitLock(30000);
