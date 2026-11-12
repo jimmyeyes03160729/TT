@@ -380,6 +380,41 @@ function exportGantt(token, ids) {
   return { sheetUrl: ss.getUrl(), xlsxUrl: xlsxUrl, name: name, b64: b64, count: items.length };
 }
 
+/**
+ * 一次性：把已匯入試算表的設備資料換成 Seed.gs 的繁體版本。
+ * 只更新從沒在網頁上改過的設備（「最後更新」是空白的）；日期、待辦、附件都不動。
+ * 用法：先把 Seed.gs 換成繁體版，在編輯器上方選這個函式，按「執行」。
+ */
+function convertToTraditional() {
+  if (!P_().getProperty('SS_ID')) { Logger.log('試算表還沒建立，第一次打開網頁時會直接使用繁體資料。'); return; }
+  const FIELDS = ['dept', 'area', 'name', 'nameEn', 'spec', 'vendor', 'unit', 'leadTime', 'note', 'utilities', 'size', 'origin', 'source', 'boi'];
+  const seed = {}; SEED_ITEMS.forEach(x => { seed[x.id] = x; });
+  const lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    const db = readAll_();
+    let done = 0, skipped = [];
+    db.items.forEach(it => {
+      const s = seed[it.id];
+      if (!s) return;
+      if (it.updatedAt) { skipped.push(it.id + ' ' + it.name); return; }
+      const before = { name: it.name, dept: it.dept };
+      FIELDS.forEach(k => { if (k in s) it[k] = s[k]; });
+      if (it.folderId && (before.name !== it.name || before.dept !== it.dept)) {
+        try {
+          const f = DriveApp.getFolderById(it.folderId);
+          f.setName(folderName_(it, db.items));
+          if (before.dept !== it.dept) f.moveTo(childFolder_(root_(), it.dept || '未分類'));
+        } catch (e) {}
+      }
+      writeItem_(db, it); done++;
+    });
+    // 舊的簡體部門資料夾若已清空就移到垃圾桶
+    const old = root_().getFoldersByName('制造部');
+    while (old.hasNext()) { const f = old.next(); if (!f.getFolders().hasNext() && !f.getFiles().hasNext()) f.setTrashed(true); }
+    Logger.log('已轉成繁體：' + done + ' 項。' + (skipped.length ? '網頁上改過、沒有覆蓋的 ' + skipped.length + ' 項：' + skipped.join('、') : ''));
+  } finally { lock.releaseLock(); }
+}
+
 /** 如需重設帳號密碼：在編輯器選這個函式按「執行」，再重新打開網頁設定新帳密。 */
 function resetAccount() {
   const p = P_(); const all = p.getProperties();

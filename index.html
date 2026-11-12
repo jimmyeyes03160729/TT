@@ -122,6 +122,9 @@ main{display:flex;flex-direction:column;gap:16px;padding-block:16px 48px}
 .chip.bad{background:var(--bad-soft);color:var(--bad)}
 .t-bad{color:var(--bad)} .t-ok{color:var(--ok)} .t-warn{color:var(--warn)}
 .empty{padding:40px 16px;text-align:center;color:var(--muted)}
+mark{background:var(--warn-soft);color:inherit;border-radius:2px;padding:0 1px}
+.sugg{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:12px}
+.search-hint{font-size:12px;color:var(--muted)}
 
 /* Gantt */
 .gantt-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
@@ -265,7 +268,7 @@ main{display:flex;flex-direction:column;gap:16px;padding-block:16px 48px}
 (function(){
 'use strict';
 const TODO_TEMPLATE=['詢價 / 比價','規格確認','請購簽核','下單 (PO)','付款','BOI 申請','出貨 / 出口報關','泰國清關','到廠交機','安裝 / 調機','驗收完成'];
-const DEPTS=['工程一部','工程二部','品保部','制造部','包材','廠務'];
+const DEPTS=['工程一部','工程二部','品保部','製造部','包材','廠務'];
 const SOURCES=['中國採購','台北代購','泰國採購','網購','自製','廠房工程'];
 const CURR=['CNY','USD','THB','TWD'];
 const PAY=['未付款','已付訂金','已付清'];
@@ -293,6 +296,47 @@ const until=s=>days(pd(today()),pd(s));
 const fmtD=s=>{const d=pd(s);return d?(d.getFullYear()+'/'+pad(d.getMonth()+1)+'/'+pad(d.getDate())):''};
 const money=n=>Number(n).toLocaleString('en-US',{maximumFractionDigits:0});
 const clone=o=>JSON.parse(JSON.stringify(o));
+
+/* ---------- 模糊搜尋：簡繁通用、忽略大小寫與符號、可打部分字或打錯一兩個字 ---------- */
+const S2T={"干":"幹","亚":"亞","布":"佈","来":"來","仓":"倉","个":"個","备":"備","价":"價","仪":"儀","储":"儲","内":"內","两":"兩","剥":"剝","划":"劃","剂":"劑","动":"動","务":"務","区":"區","协":"協","却":"卻","参":"參","单":"單","喷":"噴","吨":"噸","国":"國","围":"圍","圆":"圓","图":"圖","尧":"堯","报":"報","场":"場","块":"塊","涂":"塗","尘":"塵","压":"壓","奥":"奧","学":"學","实":"實","审":"審","宽":"寬","宝":"寶","导":"導","层":"層","带":"帶","库":"庫","厂":"廠","废":"廢","广":"廣","强":"強","弯":"彎","后":"後","径":"徑","恒":"恆","扫":"掃","采":"採","换":"換","损":"損","击":"擊","摆":"擺","搅":"攪","数":"數","暂":"暫","东":"東","条":"條","弃":"棄","栈":"棧","枫":"楓","极":"極","荣":"榮","标":"標","机":"機","检":"檢","柜":"櫃","权":"權","欧":"歐","气":"氣","净":"淨","涡":"渦","测":"測","准":"準","温":"溫","湿":"濕","滚":"滾","为":"為","无":"無","荧":"熒","热":"熱","灯":"燈","炉":"爐","独":"獨","现":"現","玛":"瑪","环":"環","产":"產","叠":"疊","发":"發","盘":"盤","硕":"碩","确":"確","码":"碼","砺":"礪","税":"稅","称":"稱","节":"節","范":"範","笃":"篤","筛":"篩","篮":"籃","签":"籤","红":"紅","纳":"納","纯":"純","纸":"紙","扎":"紮","细":"細","组":"組","绝":"絕","统":"統","丝":"絲","网":"網","线":"線","缘":"緣","总":"總","绕":"繞","圣":"聖","声":"聲","脉":"脈","脑":"腦","脚":"腳","胶":"膠","兴":"興","华":"華","莱":"萊","万":"萬","盖":"蓋","蓝":"藍","苏":"蘇","处":"處","号":"號","术":"術","冲":"衝","补":"補","装":"裝","制":"製","规":"規","视":"視","观":"觀","计":"計","讨":"討","记":"記","设":"設","询":"詢","试":"試","详":"詳","认":"認","误":"誤","调":"調","请":"請","论":"論","谱":"譜","议":"議","护":"護","丰":"豐","贝":"貝","货":"貨","买":"買","贴":"貼","贸":"貿","购":"購","赛":"賽","车":"車","轴":"軸","载":"載","辆":"輛","辉":"輝","轮":"輪","输":"輸","转":"轉","办":"辦","连":"連","周":"週","进":"進","游":"遊","运":"運","达":"達","迈":"邁","乡":"鄉","释":"釋","钉":"釘","针":"針","钳":"鉗","银":"銀","铜":"銅","锐":"銳","锉":"銼","铝":"鋁","锆":"鋯","锂":"鋰","锯":"鋸","钢":"鋼","录":"錄","锤":"錘","钱":"錢","锡":"錫","错":"錯","表":"錶","镀":"鍍","链":"鏈","镜":"鏡","锈":"鏽","铁":"鐵","鉴":"鑑","镊":"鑷","钻":"鑽","长":"長","门":"門","开":"開","间":"間","阀":"閥","关":"關","阳":"陽","双":"雙","离":"離","电":"電","雾":"霧","韦":"韋","顶":"頂","顺":"順","头":"頭","频":"頻","颗":"顆","额":"額","类":"類","显":"顯","风":"風","飞":"飛","腾":"騰","验":"驗","体":"體","鸿":"鴻","盐":"鹽","点":"點"};
+const ALIAS={'稱':'秤','錶':'表','銲':'焊','臺':'台','製':'制'};
+const SKIP=/[\s\-_/\\()（）\[\]【】{},，.。、:：;；*×'"“”‘’|+~!！?？&]/;
+function nch(ch){ let c=ch.normalize('NFKC').toLowerCase(); c=S2T[c]||c; return ALIAS[c]||c; }
+function norm(s){ let o=''; for(const ch of String(s==null?'':s)){ const c=nch(ch); if(!SKIP.test(c)) o+=c; } return o; }
+function subseq(t,s){ let i=0; for(const c of s){ if(c===t[i]) i++; if(i===t.length) return true; } return false; }
+function approx(t,s,k){ // 允許 k 個字打錯／多打／少打
+  let prev=new Array(t.length+1).fill(0).map((_,i)=>i);
+  for(const c of s){ const cur=[0]; for(let i=1;i<=t.length;i++) cur[i]=Math.min(prev[i]+1,cur[i-1]+1,prev[i-1]+(t[i-1]===c?0:1)); if(cur[t.length]<=k) return true; prev=cur; }
+  return prev[t.length]<=k;
+}
+function termScore(t,nm,all){
+  if(nm.includes(t)) return nm.startsWith(t)?120:100;
+  if(all.includes(t)) return 60;
+  const asc=/^[\x00-\x7f]+$/.test(t), minA=asc?5:3; // 英數字太短時不做打錯容錯，避免誤判
+  if(!asc&&t.length>=2&&subseq(t,nm)) return 45;
+  if(t.length>=minA&&approx(t,nm,t.length>=(asc?8:6)?2:1)) return 40;
+  if(t.length>=minA+1&&approx(t,all,t.length>=(asc?9:7)?2:1)) return 30;
+  if(!asc&&t.length>=2&&[...t].every(c=>nm.includes(c))) return 30;
+  if(!asc&&t.length>=2&&[...t].every(c=>all.includes(c))) return 12;
+  return 0;
+}
+function searchTerms(q){ return String(q||'').split(/[\s,，、]+/).map(norm).filter(Boolean); }
+function scoreItem(it,terms){
+  const nm=norm([it.name,it.nameEn].join(' ')), all=norm([it.id,it.name,it.nameEn,it.spec,it.vendor,it.area,it.dept,it.tagNo,it.owner,it.note,it.source,it.origin].join(' '));
+  let sum=0; for(const t of terms){ const v=termScore(t,nm,all); if(!v) return 0; sum+=v; } return sum/terms.length;
+}
+function hl(text,q){
+  const terms=searchTerms(q); if(!terms.length) return esc(text);
+  const set=new Set(terms.join('').split('').filter(c=>c>'⹿'));
+  const ascii=terms.filter(t=>/^[\x00-\x7f]{2,}$/.test(t));
+  let out=[...String(text||'')].map(ch=>({ch,on:set.has(nch(ch))}));
+  if(ascii.length){ const low=String(text||'').toLowerCase(); ascii.forEach(a=>{ let i=low.indexOf(a); while(i>=0){ for(let j=i;j<i+a.length&&j<out.length;j++) out[j].on=true; i=low.indexOf(a,i+1);} }); }
+  return out.map(o=>o.on?`<mark>${esc(o.ch)}</mark>`:esc(o.ch)).join('').replace(/<\/mark><mark>/g,'');
+}
+function suggest(q,n){
+  let cs=[...new Set(norm(q).split(''))]; const cjk=cs.filter(c=>c>'\u2e7f'); if(cjk.length) cs=cjk; if(!cs.length) return [];
+  return S.items.map(it=>{const nm=norm(it.name+it.spec); return {it,v:cs.filter(c=>nm.includes(c)).length/cs.length};}).filter(x=>x.v>0).sort((a,b)=>b.v-a.v).slice(0,n).map(x=>x.it);
+}
 const fsize=b=>!b?'':b<1024?b+' B':b<1048576?(b/1024).toFixed(0)+' KB':(b/1048576).toFixed(1)+' MB';
 const folderUrl=id=>id?'https://drive.google.com/drive/folders/'+id:'';
 
@@ -410,7 +454,7 @@ function renderShell(){
     <div class="overall" id="overall"></div>
     <section class="depts" id="depts"></section>
     <section class="filters">
-      <input class="inp search" id="q" type="search" placeholder="搜尋設備、規格、廠商、編號…" value="${esc(S.f.q)}" aria-label="搜尋">
+      <input class="inp search" id="q" type="search" placeholder="搜尋設備：打部分字就好，簡體繁體都可以" value="${esc(S.f.q)}" aria-label="搜尋">
       <select class="inp" id="fd" aria-label="部門"><option value="">全部部門</option>${deptList().map(d=>`<option${S.f.dept===d?' selected':''}>${esc(d)}</option>`).join('')}</select>
       <select class="inp" id="fs" aria-label="狀態"><option value="">全部狀態</option>${[['todo','未開始'],['doing','進行中'],['done','已完成'],['overdue','逾期'],['soon','30 天內交機'],['tune','有調機日期']].map(([v,l])=>`<option value="${v}"${S.f.status===v?' selected':''}>${l}</option>`).join('')}</select>
       <select class="inp" id="fo" aria-label="採購來源"><option value="">全部來源</option>${SOURCES.map(d=>`<option${S.f.source===d?' selected':''}>${d}</option>`).join('')}</select>
@@ -454,7 +498,7 @@ function renderSummary(){
 }
 
 function filtered(){
-  const q=S.f.q.trim().toLowerCase();
+  const terms=searchTerms(S.f.q); const sc=new Map();
   let r=S.items.filter(x=>{
     if(S.f.dept&&(x.dept||'未分類')!==S.f.dept) return false;
     if(S.f.source&&x.source!==S.f.source) return false;
@@ -463,17 +507,20 @@ function filtered(){
     if(s==='soon'&&!isSoon(x)) return false;
     if(s==='tune'&&!(x.tuneStart||x.tuneEnd)) return false;
     if(['todo','doing','done'].includes(s)&&statusOf(x)!==s) return false;
-    if(q){ const h=[x.id,x.name,x.nameEn,x.spec,x.vendor,x.area,x.dept,x.tagNo,x.owner,x.note].join(' ').toLowerCase(); if(h.indexOf(q)<0) return false; }
+    if(terms.length){ const v=scoreItem(x,terms); if(!v) return false; sc.set(x.id,v); }
     return true;
   });
+  if(terms.length){ // 有強相關結果時，隱藏只是零散字元相符的結果
+    const best=Math.max(0,...sc.values()); if(best>=30) r=r.filter(x=>sc.get(x.id)>=25);
+  }
   const key={
     id:x=>x.id, dept:x=>(x.dept||'')+x.id, eta:x=>(x.arrivalDate||x.eta||'9999')+x.id,
     tune:x=>(x.tuneStart||x.tuneEnd||'9999')+x.id, prog:x=>{const p=prog(x);return String(Math.round((p.n?p.d/p.n:0)*1000)).padStart(4,'0')+x.id}
   }[S.sort];
-  return r.sort((a,b)=>key(a)<key(b)?-1:key(a)>key(b)?1:0);
+  return r.sort((a,b)=>terms.length&&sc.get(b.id)!==sc.get(a.id)?sc.get(b.id)-sc.get(a.id):key(a)<key(b)?-1:key(a)>key(b)?1:0);
 }
 
-function renderView(){ const r=filtered(); $('#count').textContent=`顯示 ${r.length} / ${S.items.length} 項`; S.view==='gantt'?renderGantt(r):renderList(r); }
+function renderView(){ const r=filtered(); $('#count').textContent=`顯示 ${r.length} / ${S.items.length} 項${S.f.q.trim()&&r.length?'，依相符程度排序':''}`; S.view==='gantt'?renderGantt(r):renderList(r); }
 
 function etaCell(it){
   if(it.arrivalDate) return `<span class="t-ok">已交機 ${fmtD(it.arrivalDate)}</span>`;
@@ -484,14 +531,20 @@ function etaCell(it){
 }
 function renderList(r){
   const v=$('#view');
-  if(!r.length){ v.innerHTML='<div class="list"><div class="empty">沒有符合條件的設備。換個篩選條件，或按「＋ 新增設備」。</div></div>'; return; }
+  if(!r.length){
+    const sg=S.f.q.trim()?suggest(S.f.q,6):[];
+    v.innerHTML=`<div class="list"><div class="empty">沒有符合條件的設備。${S.f.dept||S.f.status||S.f.source?'也可以先把部門、狀態、來源改回「全部」再搜尋。':''}
+      ${sg.length?`<div style="margin-top:14px">你要找的是不是：</div><div class="sugg">${sg.map(it=>`<button class="btn sm" data-sg="${esc(it.id)}">${esc(it.name)}<span class="muted">${esc(it.spec?' · '+it.spec:'')}</span></button>`).join('')}</div>`:''}</div></div>`;
+    v.querySelectorAll('[data-sg]').forEach(b=>b.onclick=()=>openItem(b.dataset.sg));
+    return;
+  }
   v.innerHTML=`<div class="list" role="table">
     <div class="row head" role="row"><span>編號</span><span>狀態</span><span>設備 / 規格</span><span>部門 / 站別</span><span>廠商</span><span class="c-qty">數量</span><span>預計交機</span><span>待辦進度</span><span class="c-files">附件</span></div>
     ${r.map(it=>{const p=prog(it),pc=p.n?Math.round(p.d/p.n*100):0;
       return `<div class="row" role="row" tabindex="0" data-id="${esc(it.id)}">
         <span class="c-id mono">${esc(it.id)}</span>
         <span class="c-st">${chip(it)}</span>
-        <span class="c-name"><b>${esc(it.name)}</b><small>${esc(it.spec||it.nameEn||'')}</small></span>
+        <span class="c-name"><b>${hl(it.name,S.f.q)}</b><small>${hl(it.spec||it.nameEn||'',S.f.q)}</small></span>
         <span class="c-dept"><span>${esc(it.dept)}</span><span class="c-sub">${esc(it.area)}</span></span>
         <span class="c-vendor"><span>${esc(it.vendor||'—')}</span><span class="c-sub">${esc(it.source)}</span></span>
         <span class="c-qty mono">${esc(it.qty)} <small class="muted">${esc(it.unit)}</small></span>
@@ -547,7 +600,7 @@ function renderGantt(r){
     if(ts) m+=`<div class="g-bar tune" style="left:${X(ts)}px;width:${Math.max(4,X(te)-X(ts)+pxd)}px" title="${tip}"></div>`;
     if(eta&&!arr) m+=`<div class="g-dot ${isOverdue(x)?'late':'eta'}" style="left:${X(eta)+pxd/2}px" title="${tip}"></div>`;
     if(arr) m+=`<div class="g-dot arr" style="left:${X(arr)+pxd/2}px" title="${tip}"></div>`;
-    body+=`<div class="g-row"><div class="g-cell g-name" data-id="${esc(x.id)}" tabindex="0"><b>${esc(x.name)}</b><small>${esc(x.id)} · ${esc(x.dept)}${x.vendor?' · '+esc(x.vendor):''}</small></div>
+    body+=`<div class="g-row"><div class="g-cell g-name" data-id="${esc(x.id)}" tabindex="0"><b>${hl(x.name,S.f.q)}</b><small>${esc(x.id)} · ${esc(x.dept)}${x.vendor?' · '+esc(x.vendor):''}</small></div>
       <div class="g-cell g-track" data-id="${esc(x.id)}">${grid}${m}</div></div>`;
   });
   v.innerHTML=tools+`
