@@ -28,7 +28,7 @@ const COLS = [
 const EDITABLE = COLS.map(c => c[0]).filter(k => ['id', 'progress', 'files', 'folderId', 'updatedAt'].indexOf(k) < 0);
 
 /* ---------- API 入口（網頁放在 GitHub Pages，透過這裡讀寫資料） ---------- */
-const API = { getAuthState, setupAccount, login, logout, listItems, saveItem, deleteItem, uploadFile, deleteFile, exportGantt, saveVendor };
+const API = { getAuthState, setupAccount, login, logout, listItems, saveItem, deleteItem, uploadFile, deleteFile, exportGantt, saveVendor, bulkUpdate };
 
 function doPost(e) {
   let out;
@@ -309,6 +309,34 @@ function saveItem(token, input) {
     }
     writeItem_(db, it);
     return clean_(it);
+  } finally { lock.releaseLock(); }
+}
+
+/** 同名設備同步：把 fields 套用到 ids 這些設備（不動待辦、附件） */
+function bulkUpdate(token, ids, fields) {
+  check_(token);
+  const keys = Object.keys(fields || {}).filter(k => EDITABLE.indexOf(k) >= 0 && k !== 'todos');
+  if (!keys.length || !ids || !ids.length) return [];
+  const lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    const db = readAll_();
+    const now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm');
+    const out = [];
+    ids.forEach(id => {
+      const it = db.items.find(x => x.id === id); if (!it) return;
+      const before = { name: it.name, dept: it.dept };
+      keys.forEach(k => { it[k] = fields[k]; });
+      it.updatedAt = now;
+      if (it.folderId && (before.name !== it.name || before.dept !== it.dept)) {
+        try {
+          const f = DriveApp.getFolderById(it.folderId);
+          f.setName(folderName_(it, db.items));
+          if (before.dept !== it.dept) f.moveTo(childFolder_(root_(), it.dept || '未分類'));
+        } catch (e) {}
+      }
+      writeItem_(db, it); out.push(clean_(it));
+    });
+    return out;
   } finally { lock.releaseLock(); }
 }
 

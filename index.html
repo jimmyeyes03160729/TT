@@ -103,6 +103,27 @@ main{display:flex;flex-direction:column;gap:16px;padding-block:16px 48px}
 .row:hover{background:var(--accent-soft)}
 .row.head{cursor:default;border-top:0;background:var(--sunk);font-size:12px;color:var(--muted);letter-spacing:.03em;padding-block:8px}
 .row.head:hover{background:var(--sunk)}
+.sh{border:0;background:transparent;font:inherit;color:inherit;letter-spacing:inherit;cursor:pointer;padding:2px 0;display:inline-flex;align-items:center;gap:4px;text-align:left;border-radius:4px}
+.sh:hover{color:var(--accent)}
+.sh i{font-style:normal;font-size:10px;opacity:0}
+.sh:hover i{opacity:.5}
+.sh.on{color:var(--ink);font-weight:700}
+.sh.on i{opacity:1;color:var(--accent)}
+.row.head .c-qty{justify-self:end}
+.row.head .c-files{justify-self:center}
+.mscrim{position:fixed;inset:0;background:var(--scrim);z-index:50}
+.modal{position:fixed;z-index:51;left:50%;top:50%;transform:translate(-50%,-50%);width:min(620px,calc(100% - 24px));max-height:calc(100% - 40px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;background:var(--surface);border-radius:12px;box-shadow:var(--shadow)}
+.m-body{overflow:auto;padding:18px 20px;display:flex;flex-direction:column;gap:10px}
+.modal h2{margin:0;font-size:18px;text-wrap:balance}
+.modal h3{margin:8px 0 0;font-size:13px;color:var(--muted);font-weight:500;letter-spacing:.04em;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.modal p{margin:0;color:var(--muted)}
+.ck{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r);cursor:pointer}
+.ck:hover{border-color:var(--accent)}
+.ck input{width:18px;height:18px;margin-top:2px;flex:none;accent-color:var(--accent)}
+.ck .cb{display:flex;flex-direction:column;min-width:0;overflow-wrap:anywhere}
+.ck small{color:var(--muted)}
+.ck s{color:var(--muted)}
+.m-foot{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;padding:12px 20px calc(12px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line)}
 .c-name{display:flex;flex-direction:column;min-width:0}
 .c-name b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .c-name small,.c-sub{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -432,6 +453,8 @@ const Demo={
     if(!cur){ const max=all.reduce((m,x)=>Math.max(m,+String(x.id).replace(/\D/g,'')||0),0); cur={id:'E'+String(max+1).padStart(3,'0'),files:[],folderId:''}; all.push(cur); }
     Object.keys(it).forEach(k=>{if(!['id','files','folderId'].includes(k)) cur[k]=it[k]});
     const d=new Date(); cur.updatedAt=ymd(d)+' '+pad(d.getHours())+':'+pad(d.getMinutes()); this.persist(); return clone(cur); },
+  bulkUpdate(t,ids,fields){ const d=new Date(), now=ymd(d)+' '+pad(d.getHours())+':'+pad(d.getMinutes()); const out=[];
+    ids.forEach(id=>{ const it=this.items().find(x=>x.id===id); if(!it) return; Object.assign(it,fields); it.updatedAt=now; out.push(clone(it)); }); this.persist(); return out; },
   deleteItem(t,id){ this.mem=this.items().filter(x=>x.id!==id); this.persist(); return true; },
   uploadFile(t,id,name,mime,b64,size){ const it=this.items().find(x=>x.id===id); const d=new Date();
     it.files=(it.files||[]).concat([{id:'f'+Date.now(),name,url:'',size,mime,date:ymd(d)+' '+pad(d.getHours())+':'+pad(d.getMinutes())}]); this.persist(); return{files:it.files,folderId:''}; },
@@ -441,7 +464,7 @@ const Demo={
 
 /* ---------- state ---------- */
 const S={token:LS.get(TK),items:[],vendors:{},meta:{},noteEdit:null,vEdit:null,view:location.hash==='#gantt'?'gantt':location.hash==='#vendors'?'vendor':(['gantt','vendor'].includes(LS.get('eqt_view'))?LS.get('eqt_view'):'list'),
-  f:{q:'',dept:'',status:'',source:''},sort:'id',zoom:LS.get('eqt_zoom')||'week',draft:null,dirty:false,uploading:[],arm:null};
+  f:{q:'',dept:'',status:'',source:''},sort:LS.get('eqt_sort')||'id',dir:+(LS.get('eqt_dir')||1),zoom:LS.get('eqt_zoom')||'week',draft:null,dirty:false,uploading:[],arm:null};
 
 const app=$('#app');
 function toast(t,bad){ const el=document.createElement('div'); el.className='toast'+(bad?' bad':''); el.textContent=t; document.body.appendChild(el); setTimeout(()=>el.remove(),bad?5200:2600); }
@@ -508,7 +531,8 @@ function renderShell(){
       <select class="inp" id="fd" aria-label="部門"><option value="">全部部門</option>${deptList().map(d=>`<option${S.f.dept===d?' selected':''}>${esc(d)}</option>`).join('')}</select>
       <select class="inp" id="fs" aria-label="狀態"><option value="">全部狀態</option>${[['todo','未開始'],['doing','進行中'],['done','已完成'],['overdue','逾期'],['soon','30 天內交機'],['tune','有調機日期']].map(([v,l])=>`<option value="${v}"${S.f.status===v?' selected':''}>${l}</option>`).join('')}</select>
       <select class="inp" id="fo" aria-label="採購來源"><option value="">全部來源</option>${SOURCES.map(d=>`<option${S.f.source===d?' selected':''}>${d}</option>`).join('')}</select>
-      <select class="inp" id="so" aria-label="排序">${[['id','依編號'],['eta','依預計交機日'],['tune','依調機日'],['prog','依進度（少→多）'],['dept','依部門']].map(([v,l])=>`<option value="${v}"${S.sort===v?' selected':''}>${l}</option>`).join('')}</select>
+      <select class="inp" id="so" aria-label="排序">${SORTS.map(([v,l])=>`<option value="${v}"${S.sort===v?' selected':''}>依${l}</option>`).join('')}</select>
+      <button class="btn" id="sd" type="button" aria-label="切換排序方向">${S.dir>0?'↑ 小→大':'↓ 大→小'}</button>
       <div class="seg" role="tablist"><button id="vList" class="${S.view==='list'?'on':''}">清單</button><button id="vGantt" class="${S.view==='gantt'?'on':''}">甘特圖</button><button id="vVendor" class="${S.view==='vendor'?'on':''}">廠商</button></div>
       <span class="count" id="count"></span>
     </section>
@@ -521,7 +545,8 @@ function renderShell(){
   $('#fd').onchange=e=>{S.f.dept=e.target.value;renderSummary();renderView()};
   $('#fs').onchange=e=>{S.f.status=e.target.value;renderSummary();renderView()};
   $('#fo').onchange=e=>{S.f.source=e.target.value;renderView()};
-  $('#so').onchange=e=>{S.sort=e.target.value;renderView()};
+  $('#so').onchange=e=>setSort(e.target.value,1);
+  $('#sd').onclick=()=>setSort(S.sort,-S.dir);
   $('#vList').onclick=()=>setView('list'); $('#vGantt').onclick=()=>setView('gantt'); $('#vVendor').onclick=()=>setView('vendor');
   renderSummary(); renderView();
 }
@@ -563,11 +588,36 @@ function filtered(){
   if(terms.length){ // 有強相關結果時，隱藏只是零散字元相符的結果
     const best=Math.max(0,...sc.values()); if(best>=30) r=r.filter(x=>sc.get(x.id)>=25);
   }
-  const key={
-    id:x=>x.id, dept:x=>(x.dept||'')+x.id, eta:x=>(x.arrivalDate||x.eta||'9999')+x.id,
-    tune:x=>(x.tuneStart||x.tuneEnd||'9999')+x.id, prog:x=>{const p=prog(x);return String(Math.round((p.n?p.d/p.n:0)*1000)).padStart(4,'0')+x.id}
-  }[S.sort];
-  return r.sort((a,b)=>terms.length&&sc.get(b.id)!==sc.get(a.id)?sc.get(b.id)-sc.get(a.id):key(a)<key(b)?-1:key(a)>key(b)?1:0);
+  const byRel=terms.length&&S.sort==='id'&&S.dir>0; // 搜尋時預設依相符程度
+  return r.sort((a,b)=>byRel&&sc.get(b.id)!==sc.get(a.id)?sc.get(b.id)-sc.get(a.id):cmpBy(a,b,S.sort,S.dir));
+}
+const SORTS=[['id','編號'],['status','狀態'],['name','設備名稱'],['dept','部門 / 站別'],['vendor','廠商'],['qty','數量'],['eta','預計交機日'],['tune','調機日'],['prog','待辦進度'],['files','附件數']];
+const idNum=x=>+String(x.id).replace(/\D/g,'')||0;
+function sortVal(x,k){
+  switch(k){
+    case 'id': return idNum(x);
+    case 'status': return isOverdue(x)?0:{todo:1,doing:2,done:3}[statusOf(x)];
+    case 'name': return x.name||null;
+    case 'dept': return x.dept?(x.dept+'\u0001'+(x.area||'')):null;
+    case 'vendor': return String(x.vendor||'').trim()||null;
+    case 'qty': return x.qty===''||x.qty==null||isNaN(+x.qty)?null:+x.qty;
+    case 'eta': return x.arrivalDate||x.eta||null;
+    case 'tune': return x.tuneStart||x.tuneEnd||null;
+    case 'prog': { const p=prog(x); return p.n?p.d/p.n:0; }
+    case 'files': return (x.files||[]).length;
+  } return idNum(x);
+}
+function cmpBy(a,b,k,dir){
+  const va=sortVal(a,k), vb=sortVal(b,k);
+  if(va===null&&vb===null) return idNum(a)-idNum(b);
+  if(va===null) return 1; if(vb===null) return -1; // 空白永遠排最後
+  const c=typeof va==='number'&&typeof vb==='number'?va-vb:String(va).localeCompare(String(vb),'zh-Hant');
+  return c?c*dir:idNum(a)-idNum(b);
+}
+function setSort(k,dir){
+  S.sort=k; S.dir=dir; LS.set('eqt_sort',k); LS.set('eqt_dir',String(dir));
+  const so=$('#so'); if(so) so.value=k; const sd=$('#sd'); if(sd) sd.textContent=dir>0?'↑ 小→大':'↓ 大→小';
+  renderView();
 }
 
 function renderView(){ if(S.view==='vendor') return renderVendors(); const r=filtered(); $('#count').textContent=`顯示 ${r.length} / ${S.items.length} 項${S.f.q.trim()&&r.length?'，依相符程度排序':''}`; S.view==='gantt'?renderGantt(r):renderList(r); }
@@ -589,7 +639,8 @@ function renderList(r){
     return;
   }
   v.innerHTML=`<div class="list" role="table">
-    <div class="row head" role="row"><span>編號</span><span>狀態</span><span>設備 / 規格</span><span>部門 / 站別</span><span>廠商</span><span class="c-qty">數量</span><span>預計交機</span><span>待辦進度</span><span class="c-files">附件</span></div>
+    <div class="row head" role="row">${[['id','編號',''],['status','狀態',''],['name','設備 / 規格',''],['dept','部門 / 站別',''],['vendor','廠商',''],['qty','數量','c-qty'],['eta','預計交機',''],['prog','待辦進度',''],['files','附件','c-files']].map(([k,l,c])=>{const on=S.sort===k;
+      return `<button class="sh ${c} ${on?'on':''}" data-sort="${k}" aria-label="依${l}排序${on?(S.dir>0?'，目前小到大':'，目前大到小'):''}">${l}<i>${on&&S.dir<0?'▼':'▲'}</i></button>`}).join('')}</div>
     ${r.map(it=>{const p=prog(it),pc=p.n?Math.round(p.d/p.n*100):0;
       return `<div class="row" role="row" tabindex="0" data-id="${esc(it.id)}">
         <span class="c-id mono">${esc(it.id)}</span>
@@ -603,6 +654,7 @@ function renderList(r){
         <span class="c-files mono">${(it.files||[]).length||'—'}</span>
       </div>`}).join('')}
   </div>`;
+  v.querySelectorAll('[data-sort]').forEach(b=>b.onclick=()=>{ const k=b.dataset.sort; setSort(k, S.sort===k?-S.dir:1); });
   v.querySelectorAll('.row[data-id]').forEach(el=>{ el.onclick=()=>openItem(el.dataset.id); el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openItem(el.dataset.id)}}; });
 }
 
@@ -691,7 +743,7 @@ function showExportDone(res){
 function newItem(){ return {id:'',tagNo:'',dept:S.f.dept||'',area:'',name:'',nameEn:'',spec:'',vendor:'',qty:1,unit:'台',currency:'CNY',unitPrice:'',totalPrice:'',source:'中國採購',payment:'未付款',owner:'',poDate:'',eta:'',arrivalDate:'',tuneStart:'',tuneEnd:'',leadTime:'',boi:'未送審',hsCode:'',origin:'',size:'',utilities:'',note:'',todos:TODO_TEMPLATE.map(t=>({t,done:false,at:''})),files:[],folderId:''}; }
 function openItem(id){
   const it=id?S.items.find(x=>x.id===id):null; if(id&&!it) return;
-  S.draft=it?clone(it):newItem(); S.dirty=false; S.arm=null; S.uploading=[];
+  S.draft=it?clone(it):newItem(); S.orig=it?clone(it):null; S.dirty=false; S.arm=null; S.uploading=[];
   closeDrawer(true);
   const sc=document.createElement('div'); sc.className='scrim'; sc.id='scrim'; sc.onclick=()=>tryClose();
   const d=document.createElement('aside'); d.className='drawer'; d.id='drawer'; d.setAttribute('role','dialog'); d.setAttribute('aria-modal','true');
@@ -700,7 +752,7 @@ function openItem(id){
 }
 function closeDrawer(force){ const d=$('#drawer'),s=$('#scrim'); if(d)d.remove(); if(s)s.remove(); document.body.style.overflow=''; S.vEdit=null; S.noteEdit=null; if(!force){S.draft=null;} }
 function tryClose(){ if(S.dirty){ showConfirm('有尚未儲存的變更，要放棄嗎？','放棄變更',()=>{S.dirty=false;closeDrawer()}); return; } closeDrawer(); }
-function onKey(e){ if(e.key==='Escape'&&$('#drawer')) tryClose(); }
+function onKey(e){ if(e.key!=='Escape') return; if($('.modal')){ closeModal(); return; } if($('#drawer')) tryClose(); }
 document.addEventListener('keydown',onKey);
 
 function fieldHTML([k,l,type,span,req,list]){
@@ -857,9 +909,62 @@ async function _saveDraft(silent){
     S.saving=false;
     if($('#drawer')&&S.draft===d){ if(wasNew){ const sc=$('#dbody').scrollTop; renderDrawer(); $('#dbody').scrollTop=sc; } else { renderFoot(); const sub=$('.d-head .sub'); if(sub) sub.innerHTML=`<span class="mono">${esc(saved.id)}</span>${chip(saved)}<span>更新於 ${esc(saved.updatedAt||'')}</span>`; } }
     renderSummary(); renderView();
-    if(!silent) toast('已儲存');
+    if(!silent){ toast('已儲存'); if(!wasNew&&S.draft===d) maybeSync(d); else S.orig=clone(d); }
     return saved;
   }catch(e){ S.saving=false; renderFoot(); toast('儲存失敗：'+msg(e),true); }
+}
+
+/* ---------- 同名設備同步 ---------- */
+const FIELD_LABEL={}; FORM.forEach(sec=>sec.f.forEach(f=>FIELD_LABEL[f[0]]=f[1]));
+const SYNC_KEYS=Object.keys(FIELD_LABEL);
+const show=v=>v===''||v==null?'（空白）':String(v);
+function closeModal(){ document.querySelectorAll('.mscrim,.modal').forEach(e=>e.remove()); }
+function maybeSync(d){
+  const o=S.orig; if(!o){ S.orig=clone(d); return; }
+  const same=(a,b)=>String(a==null?'':a).trim()===String(b==null?'':b).trim();
+  const changed=SYNC_KEYS.filter(k=>!same(o[k],d[k]));
+  const key=norm(o.name);
+  const matches=S.items.filter(x=>x.id!==d.id&&key&&(norm(x.name)===key||norm(x.name)===norm(d.name)));
+  if(!changed.length||!matches.length){ S.orig=clone(d); return; }
+  showSync(d,o,changed,matches);
+}
+function showSync(d,o,changed,matches){
+  closeModal();
+  const sc=document.createElement('div'); sc.className='mscrim';
+  const m=document.createElement('div'); m.className='modal'; m.setAttribute('role','dialog'); m.setAttribute('aria-modal','true'); m.setAttribute('aria-labelledby','mh');
+  m.innerHTML=`<div class="m-body">
+      <h2 id="mh">要同步到其他「${esc(o.name)}」嗎？</h2>
+      <p>還有 ${matches.length} 項設備也叫「${esc(o.name)}」。勾選要同步的欄位和設備，沒勾的不會改。</p>
+      <h3>你改了這些欄位</h3>
+      ${changed.map(k=>`<label class="ck"><input type="checkbox" data-sf="${k}" checked><span class="cb"><b>${esc(FIELD_LABEL[k])}</b><span><s>${esc(show(o[k]))}</s> → ${esc(show(d[k]))}</span></span></label>`).join('')}
+      <h3>同名設備（${matches.length} 項）<button class="btn sm" type="button" id="sall">全選</button><button class="btn sm" type="button" id="snone">全不選</button></h3>
+      ${matches.map(x=>{const diff=changed.filter(k=>String(x[k]==null?'':x[k]).trim()!==String(d[k]==null?'':d[k]).trim());
+        return `<label class="ck"><input type="checkbox" data-si="${esc(x.id)}" checked><span class="cb"><span><span class="mono">${esc(x.id)}</span> · ${esc(x.dept)}${x.area?' · '+esc(x.area):''}</span>
+          <small>${esc([x.spec,x.vendor,x.qty!==''&&x.qty!=null?x.qty+(x.unit||''):''].filter(Boolean).join(' · ')||'—')}</small>
+          <small>${diff.length?'目前：'+diff.map(k=>esc(FIELD_LABEL[k])+' '+esc(show(x[k]))).join('；'):'這些欄位已經一樣'}</small></span></label>`}).join('')}
+    </div>
+    <div class="m-foot"><button class="btn" type="button" id="sskip">不同步</button><button class="btn primary" type="button" id="sgo"></button></div>`;
+  document.body.append(sc,m);
+  const upd=()=>{ const n=m.querySelectorAll('[data-si]:checked').length, f=m.querySelectorAll('[data-sf]:checked').length; const b=$('#sgo'); b.textContent=n&&f?`同步到勾選的 ${n} 項`:'請至少勾選一個欄位和一項設備'; b.disabled=!(n&&f); };
+  m.querySelectorAll('input').forEach(i=>i.onchange=upd); upd();
+  $('#sall').onclick=()=>{ m.querySelectorAll('[data-si]').forEach(i=>i.checked=true); upd(); };
+  $('#snone').onclick=()=>{ m.querySelectorAll('[data-si]').forEach(i=>i.checked=false); upd(); };
+  const skip=()=>{ S.orig=clone(d); closeModal(); };
+  sc.onclick=skip; $('#sskip').onclick=skip;
+  $('#sgo').onclick=async()=>{
+    const ids=[...m.querySelectorAll('[data-si]:checked')].map(i=>i.dataset.si);
+    const fields={}; [...m.querySelectorAll('[data-sf]:checked')].forEach(i=>{ const k=i.dataset.sf; fields[k]=['qty','unitPrice','totalPrice'].includes(k)?numOrBlank(d[k]):d[k]; });
+    const b=$('#sgo'); b.disabled=true; b.textContent='同步中…';
+    try{
+      let updated;
+      try{ updated=await authed('bulkUpdate',ids,fields); }
+      catch(e){ if(!/未知的操作|bulkUpdate/.test(msg(e))) throw e; // 舊版後端：逐筆存檔
+        updated=[]; for(const id of ids){ const it=S.items.find(x=>x.id===id); const o2={}; Object.keys(it).forEach(k=>{ if(!['files','folderId','updatedAt'].includes(k)) o2[k]=it[k]; }); Object.assign(o2,fields); updated.push(await authed('saveItem',o2)); } }
+      (updated||[]).forEach(u=>{ const i=S.items.findIndex(x=>x.id===u.id); if(i>=0) S.items[i]=u; });
+      S.orig=clone(d); closeModal(); renderSummary(); renderView(); toast(`已同步 ${ids.length} 項設備`);
+    }catch(e){ toast('同步失敗：'+msg(e),true); upd(); }
+  };
+  setTimeout(()=>$('#sgo')&&$('#sgo').focus(),30);
 }
 
 /* ---------- 廠商通訊錄 ---------- */
